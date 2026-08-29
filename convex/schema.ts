@@ -130,28 +130,49 @@ export default defineSchema({
     isCompleted: v.optional(v.boolean()),
   }),
 
-  githubInstallations: defineTable({
-    installationId: v.optional(v.union(v.number(), v.string())),
-    ownerTokenIdentifier: v.optional(v.string()),
-  })
-    .index("by_installation_id", ["installationId"])
-    .index("by_owner", ["ownerTokenIdentifier"]),
   githubInstallationIntents: defineTable({
-    state: v.optional(v.string()),
-    ownerTokenIdentifier: v.optional(v.string()),
+    state: v.string(),
+    ownerTokenIdentifier: v.string(),
+    expiresAt: v.number(),
+    installationId: v.optional(v.number()),
+    usedAt: v.optional(v.number()),
   })
     .index("by_state", ["state"])
     .index("by_owner", ["ownerTokenIdentifier"]),
-  githubRepositories: defineTable({
-    fullName: v.optional(v.string()),
-    githubRepositoryId: v.optional(v.union(v.number(), v.string())),
-    installationId: v.optional(v.union(v.number(), v.string(), v.id("githubInstallations"))),
-    ownerTokenIdentifier: v.optional(v.string()),
+
+  githubInstallations: defineTable({
+    installationId: v.number(),
+    ownerTokenIdentifier: v.string(),
+    accountId: v.number(),
+    accountLogin: v.string(),
+    accountType: v.string(),
+    repositorySelection: v.string(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("suspended"),
+      v.literal("deleted"),
+    ),
+    lastSyncedAt: v.number(),
   })
-    .index("by_full_name", ["fullName"])
-    .index("by_github_repo_id", ["githubRepositoryId"])
     .index("by_installation_id", ["installationId"])
     .index("by_owner", ["ownerTokenIdentifier"]),
+
+  githubRepositories: defineTable({
+    githubRepositoryId: v.number(),
+    installationId: v.number(),
+    ownerTokenIdentifier: v.string(),
+    owner: v.string(),
+    name: v.string(),
+    fullName: v.string(),
+    defaultBranch: v.optional(v.string()),
+    isPrivate: v.boolean(),
+    htmlUrl: v.string(),
+    status: v.union(v.literal("active"), v.literal("inactive")),
+  })
+    .index("by_github_repo_id", ["githubRepositoryId"])
+    .index("by_installation_id", ["installationId"])
+    .index("by_owner", ["ownerTokenIdentifier"])
+    .index("by_full_name", ["fullName"]),
 
   githubEvents: defineTable({
     deliveryId: v.string(),
@@ -170,8 +191,9 @@ export default defineSchema({
     processedAt: v.optional(v.number()),
     draftId: v.optional(v.id("contentDrafts")),
     skipReason: v.optional(v.string()),
+    installationId: v.optional(v.number()),
+    githubRepositoryId: v.optional(v.number()),
     ownerTokenIdentifier: v.optional(v.string()),
-    githubRepositoryId: v.optional(v.union(v.string(), v.number(), v.id("githubRepositories"))),
   })
     .index("by_delivery_id", ["deliveryId"])
     .index("by_status", ["status"])
@@ -242,10 +264,12 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     completedAt: v.optional(v.number()),
+    ownerTokenIdentifier: v.optional(v.string()),
   })
     .index("by_change_key", ["changeKey"])
     .index("by_status_and_updated_at", ["status", "updatedAt"])
-    .index("by_updated_at", ["updatedAt"]),
+    .index("by_updated_at", ["updatedAt"])
+    .index("by_owner_and_updated_at", ["ownerTokenIdentifier", "updatedAt"]),
 
   generationRuns: defineTable({
     draftId: v.id("contentDrafts"),
