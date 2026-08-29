@@ -1,27 +1,39 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useSyncExternalStore } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { readOnboardingComplete } from "./onboarding/onboarding-storage";
 import { WelcomeBack } from "./onboarding/welcome-back";
 
-export default function Home() {
+function HomeContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const ready = useSyncExternalStore(
     () => () => undefined,
     readOnboardingComplete,
     () => false,
   );
+  const hasInstallCallback =
+    searchParams.get("installed") === "true" ||
+    Boolean(searchParams.get("error"));
 
   useEffect(() => {
-    if (!readOnboardingComplete()) {
+    if (!readOnboardingComplete() && !hasInstallCallback) {
       router.replace("/onboarding");
     }
-  }, [ready, router]);
+  }, [hasInstallCallback, ready, router]);
 
-  if (!ready) {
+  if (!ready && !hasInstallCallback) {
     return <div className="min-h-screen bg-background" />;
   }
 
   return <WelcomeBack />;
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <HomeContent />
+    </Suspense>
+  );
 }
