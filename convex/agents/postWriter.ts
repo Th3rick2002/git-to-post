@@ -11,8 +11,8 @@ import { generatedDraftValidator } from "../schema";
 const evidenceSchema = z.object({
   claim: z.string().max(500),
   source: z.string().max(500),
-  file: z.string().max(400).nullable().default(null),
-  lines: z.string().max(80).nullable().default(null),
+  file: z.string().max(400).nullable(),
+  lines: z.string().max(80).nullable(),
 });
 
 const metricSchema = z.object({
@@ -26,11 +26,11 @@ const changeAnalysisSchema = z.object({
   before: z.string().max(1_500),
   after: z.string().max(1_500),
   impact: z.string().max(1_500),
-  architectureNotes: z.string().max(1_500).nullable().default(null),
-  apiChanges: z.string().max(1_500).nullable().default(null),
-  unknowns: z.array(z.string().max(400)).max(12).default([]),
-  evidence: z.array(evidenceSchema).max(12).default([]),
-  metrics: z.array(metricSchema).max(8).default([]),
+  architectureNotes: z.string().max(1_500).nullable(),
+  apiChanges: z.string().max(1_500).nullable(),
+  unknowns: z.array(z.string().max(400)).max(12),
+  evidence: z.array(evidenceSchema).max(12),
+  metrics: z.array(metricSchema).max(8),
   confidence: z.enum(["low", "medium", "high"]),
 });
 
@@ -40,14 +40,14 @@ const writtenDraftSchema = z.object({
   xThread: z.array(z.string().max(280)).min(1).max(6),
   linkedinPost: z.string().max(3_000),
   changelogMarkdown: z.string().max(12_000),
-  technicalHighlights: z.array(z.string().max(600)).max(12).default([]),
-  breakingChanges: z.array(z.string().max(600)).max(8).default([]),
-  hashtags: z.array(z.string().max(60)).max(8).default([]),
+  technicalHighlights: z.array(z.string().max(600)).max(12),
+  breakingChanges: z.array(z.string().max(600)).max(8),
+  hashtags: z.array(z.string().max(60)).max(8),
   visualBrief: z.object({
     subject: z.string().max(600),
     mood: z.string().max(300),
     palette: z.array(z.string().max(80)).min(2).max(8),
-    avoid: z.array(z.string().max(120)).max(12).default([]),
+    avoid: z.array(z.string().max(120)).max(12),
   }),
 });
 
@@ -78,7 +78,6 @@ function createWriter() {
   }
   const openRouter = createOpenRouter({
     apiKey,
-    compatibility: "compatible",
     ...(env.OPENROUTER_APP_NAME ? { appName: env.OPENROUTER_APP_NAME } : {}),
     ...(env.OPENROUTER_SITE_URL ? { appUrl: env.OPENROUTER_SITE_URL } : {}),
   });
@@ -108,7 +107,7 @@ export const generateStructuredDraft = internalAction({
       {
         prompt: `Phase 1: factual analysis only. Do not write social posts yet.
 
-Return a ChangeAnalysis object from the evidence below. Include architectureNotes, apiChanges, file/line citations, unknowns that must not be invented, and metrics only when the evidence contains the exact value.
+Return a ChangeAnalysis object from the evidence below. Include architectureNotes, apiChanges, file/line citations, unknowns (return empty array [] if none), and metrics only when the evidence contains the exact value (return empty array [] if none).
 
 ${args.prompt}`,
         schema: changeAnalysisSchema,
