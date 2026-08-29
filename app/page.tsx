@@ -90,7 +90,6 @@ function DashboardContent() {
       setConnecting(true);
       setErrorMessage(null);
       const { state } = await beginInstallation();
-      // Redirect to install start route with secure state
       router.push(`/api/github/install/start?state=${encodeURIComponent(state)}`);
     } catch (err) {
       setErrorMessage(
@@ -110,37 +109,52 @@ function DashboardContent() {
               🚀 PublicaDev
             </h1>
             <p className="text-slate-400 mt-1 text-sm">
-              Conexión automática de repositorios con GitHub App y eventos en tiempo real.
+              Genera hilos de X, posts de LinkedIn y Changelogs con IA a partir de tus commits y releases.
             </p>
           </div>
 
-          <div suppressHydrationWarning className="flex items-center gap-3">
-            {session?.user ? (
-              <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 py-1.5 px-3 rounded-xl">
-                <div className="text-xs text-slate-300">
-                  <span className="text-slate-500">Sesión:</span>{" "}
-                  <strong>{session.user.name || session.user.email}</strong>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/drafts"
+              className="flex items-center gap-1.5 rounded-xl border border-purple-500/30 bg-purple-500/10 px-3.5 py-2 text-xs font-semibold text-purple-300 transition hover:bg-purple-500/20"
+            >
+              ✍️ Borradores IA
+            </Link>
+            <Link
+              href="/events"
+              className="rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700"
+            >
+              📥 Webhooks
+            </Link>
+
+            <div suppressHydrationWarning className="flex items-center gap-3">
+              {session?.user ? (
+                <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 py-1.5 px-3 rounded-xl">
+                  <div className="text-xs text-slate-300">
+                    <span className="text-slate-500">Sesión:</span>{" "}
+                    <strong>{session.user.name || session.user.email}</strong>
+                  </div>
+                  <button
+                    onClick={() => signOut()}
+                    className="text-xs text-rose-400 hover:text-rose-300 font-medium ml-2 transition cursor-pointer"
+                  >
+                    Cerrar sesión
+                  </button>
                 </div>
-                <button
-                  onClick={() => signOut()}
-                  className="text-xs text-rose-400 hover:text-rose-300 font-medium ml-2 transition"
-                >
-                  Cerrar sesión
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                {authLoading ? (
-                  <span className="text-xs text-slate-500">Verificando sesión...</span>
-                ) : null}
-                <Link
-                  href="/login"
-                  className="bg-white text-slate-950 font-semibold text-xs py-2 px-4 rounded-xl hover:bg-slate-100 transition shadow"
-                >
-                  Iniciar sesión
-                </Link>
-              </div>
-            )}
+              ) : (
+                <div className="flex items-center gap-2">
+                  {authLoading ? (
+                    <span className="text-xs text-slate-500">Verificando...</span>
+                  ) : null}
+                  <Link
+                    href="/login"
+                    className="bg-white text-slate-950 font-semibold text-xs py-2 px-4 rounded-xl hover:bg-slate-100 transition shadow"
+                  >
+                    Iniciar sesión
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -150,7 +164,7 @@ function DashboardContent() {
             <span>{syncStatus}</span>
             <button
               onClick={() => setSyncStatus(null)}
-              className="text-xs font-bold text-emerald-400 hover:text-emerald-200"
+              className="text-xs font-bold text-emerald-400 hover:text-emerald-200 cursor-pointer"
             >
               ✕
             </button>
@@ -162,31 +176,31 @@ function DashboardContent() {
             <span>{errorMessage}</span>
             <button
               onClick={() => setErrorMessage(null)}
-              className="text-xs font-bold text-rose-400 hover:text-rose-200"
+              className="text-xs font-bold text-rose-400 hover:text-rose-200 cursor-pointer"
             >
               ✕
             </button>
           </div>
         )}
 
-        {/* Action Panel: Connect Repositories */}
+        {/* Action Panel: Connect Repositories & AI Features */}
         <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
             <h2 className="text-lg font-semibold text-white">
-              📦 Repositorios de GitHub
+              📦 Repositorios de GitHub & Generación de Contenido
             </h2>
             <p className="text-sm text-slate-400 max-w-xl">
-              Instala la GitHub App en tu cuenta u organización para recibir eventos (pushes, PRs, releases) de forma automática.
+              Instala la GitHub App para que la IA escuche automáticamente tus pushes, pull requests y releases, generando publicaciones listas para compartir.
             </p>
           </div>
 
-          <div>
+          <div className="flex items-center gap-3">
             <button
               suppressHydrationWarning
               onClick={handleConnectGitHub}
               disabled={connecting || !session?.user}
               title={!session?.user ? "Inicia sesión primero para conectar repositorios" : undefined}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm py-2.5 px-5 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm py-2.5 px-5 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm cursor-pointer"
             >
               <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                 <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
@@ -268,6 +282,12 @@ function DashboardContent() {
                 </span>
               )}
             </h2>
+            <Link
+              href="/drafts"
+              className="text-xs text-purple-400 hover:text-purple-300 transition"
+            >
+              Ver publicaciones generadas →
+            </Link>
           </div>
 
           {!isSignedIn ? (
@@ -280,7 +300,7 @@ function DashboardContent() {
             <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-400">
               <p className="text-sm">Aún no se han recibido eventos de tus repositorios.</p>
               <p className="text-xs text-slate-500 mt-1">
-                Haz un commit, push o release en un repositorio conectado para verlo aparecer aquí al instante.
+                Haz un commit, push o release en un repositorio conectado para verlo aparecer aquí al instante y generar contenido con IA.
               </p>
             </div>
           ) : (

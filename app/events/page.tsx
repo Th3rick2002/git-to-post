@@ -1,8 +1,10 @@
 "use client";
 
 import { useQuery } from "convex/react";
+import Link from "next/link";
 import { api } from "../../convex/_generated/api";
 import { useSession } from "@/lib/auth-client";
+import { ownerTokenFromSession } from "@/lib/sessionOwner";
 
 export default function EventsPage() {
   if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
@@ -23,22 +25,40 @@ export default function EventsPage() {
 
 function EventsFeed() {
   const { data: session, isPending } = useSession();
+  const ownerTokenIdentifier = ownerTokenFromSession(session);
   const isSignedIn = Boolean(session?.user);
+
   const events = useQuery(
     api.githubEvents.list,
-    isSignedIn ? { limit: 20 } : "skip"
+    isSignedIn ? { limit: 20, ownerTokenIdentifier } : "skip"
   );
 
   return (
     <main className="min-h-screen bg-slate-950 p-8 font-sans text-slate-100">
       <div className="mx-auto max-w-4xl space-y-8">
-        <header className="border-b border-slate-800 pb-4">
-          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-white">
-            Git-to-Post Webhooks
-          </h1>
-          <p className="mt-1 text-slate-400">
-            Recepción y procesamiento en tiempo real de eventos de GitHub con Convex.
-          </p>
+        <header className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div>
+            <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-white">
+              Git-to-Post Webhooks
+            </h1>
+            <p className="mt-1 text-slate-400">
+              Recepción y procesamiento en tiempo real de eventos de GitHub con Convex.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/"
+              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
+            >
+              Dashboard
+            </Link>
+            <Link
+              href="/drafts"
+              className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-300 transition hover:bg-purple-500/20"
+            >
+              ✍️ Borradores IA
+            </Link>
+          </div>
         </header>
 
         <section className="space-y-3 rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
@@ -83,6 +103,14 @@ function EventsFeed() {
           ) : !isSignedIn ? (
             <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/50 p-8 text-center text-slate-400">
               <p>Inicia sesión para ver los eventos de tus repositorios.</p>
+              <div className="mt-4">
+                <Link
+                  href="/login"
+                  className="inline-flex rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950"
+                >
+                  Continuar con GitHub
+                </Link>
+              </div>
             </div>
           ) : !events ? (
             <div className="text-sm text-slate-500">Cargando eventos...</div>

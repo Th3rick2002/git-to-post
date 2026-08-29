@@ -12,7 +12,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${siteUrl}/?error=missing_installation_id`);
   }
 
-  // Redirect to dashboard with params to trigger completion in Convex
   const redirectUrl = `${siteUrl}/?installed=true&installation_id=${installationId}&state=${encodeURIComponent(
     state
   )}&code=${encodeURIComponent(code)}`;
