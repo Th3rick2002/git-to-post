@@ -15,6 +15,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
+import { ownerFromIdentity } from "./lib/owner";
 import {
   DEFAULT_GENERATION_POLICY,
   normalizeGitHubEvent,
@@ -315,6 +316,9 @@ export const enqueueFromEvent = internalMutation({
       agentThreadId: threadId,
       createdAt: now,
       updatedAt: now,
+      ...(event.ownerTokenIdentifier !== undefined
+        ? { ownerTokenIdentifier: event.ownerTokenIdentifier }
+        : {}),
     });
     const runId = await ctx.db.insert("generationRuns", {
       draftId,
@@ -474,13 +478,23 @@ export const updateEditedContent = mutation({
 });
 
 export const list = query({
-  args: { limit: v.optional(v.number()) },
+  args: {
+    limit: v.optional(v.number()),
+    ownerTokenIdentifier: v.optional(v.string()),
+  },
   returns: v.array(draftViewValidator),
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const owner = ownerFromIdentity(identity, args.ownerTokenIdentifier);
+    if (!owner) {
+      return [];
+    }
     const limit = Math.max(1, Math.min(50, Math.floor(args.limit ?? 20)));
     const drafts = await ctx.db
       .query("contentDrafts")
-      .withIndex("by_updated_at")
+      .withIndex("by_owner_and_updated_at", (q) =>
+        q.eq("ownerTokenIdentifier", owner),
+      )
       .order("desc")
       .take(limit);
     return await Promise.all(drafts.map((draft) => toDraftView(ctx, draft)));
@@ -488,7 +502,10 @@ export const list = query({
 });
 
 export const get = query({
-  args: { draftId: v.id("contentDrafts") },
+  args: {
+    draftId: v.id("contentDrafts"),
+    ownerTokenIdentifier: v.optional(v.string()),
+  },
   returns: v.union(
     v.null(),
     v.object({
@@ -497,8 +514,13 @@ export const get = query({
     }),
   ),
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const owner = ownerFromIdentity(identity, args.ownerTokenIdentifier);
+    if (!owner) {
+      return null;
+    }
     const draft = await ctx.db.get(args.draftId);
-    if (!draft) {
+    if (!draft || draft.ownerTokenIdentifier !== owner) {
       return null;
     }
     const references = await ctx.db
