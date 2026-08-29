@@ -79,6 +79,10 @@ export const { onCreate, onUpdate, onDelete } = authComponent.triggersApi();
 export const getCurrentUser = query({
   args: {},
   handler: async (ctx) => {
-    return await authComponent.safeGetAuthUser(ctx);
+    try {
+      return await authComponent.safeGetAuthUser(ctx);
+    } catch {
+      return null;
+    }
   },
 });

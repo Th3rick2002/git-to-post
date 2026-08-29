@@ -22,7 +22,12 @@ export async function getGithubUserId(ctx: DbCtx): Promise<number | null> {
   if (!identity) {
     return null;
   }
-  const user = await authComponent.safeGetAuthUser(ctx);
+  let user = null;
+  try {
+    user = await authComponent.safeGetAuthUser(ctx);
+  } catch {
+    return null;
+  }
   if (!user) {
     return null;
   }
