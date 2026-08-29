@@ -36,6 +36,29 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
           githubUserId,
         });
       },
+      onUpdate: async (ctx, newDoc) => {
+        if (newDoc.providerId !== "github") {
+          return;
+        }
+        const githubUserId = Number(newDoc.accountId);
+        if (!Number.isFinite(githubUserId) || githubUserId <= 0) {
+          return;
+        }
+        const existing = await ctx.db
+          .query("githubIdentities")
+          .withIndex("by_better_auth_user_id", (q) =>
+            q.eq("betterAuthUserId", newDoc.userId)
+          )
+          .first();
+        if (existing) {
+          await ctx.db.patch(existing._id, { githubUserId });
+          return;
+        }
+        await ctx.db.insert("githubIdentities", {
+          betterAuthUserId: newDoc.userId,
+          githubUserId,
+        });
+      },
     },
   },
 });
