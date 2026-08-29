@@ -1,8 +1,24 @@
 import { httpRouter } from "convex/server";
-import { httpAction } from "./_generated/server";
+import { env, httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 
 const http = httpRouter();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readNestedString(
+  value: unknown,
+  parent: string,
+  property: string,
+): string | undefined {
+  if (!isRecord(value) || !isRecord(value[parent])) {
+    return undefined;
+  }
+  const nested = value[parent][property];
+  return typeof nested === "string" ? nested : undefined;
+}
 
 /**
  * Verifies HMAC-SHA256 signature from GitHub using Web Crypto API.
@@ -54,7 +70,7 @@ http.route({
     const event = req.headers.get("x-github-event");
     const deliveryId = req.headers.get("x-github-delivery");
 
-    const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+    const webhookSecret = env.GITHUB_WEBHOOK_SECRET;
 
     // If a secret is set in Convex environment variables, verify the signature
     if (webhookSecret) {
@@ -77,7 +93,7 @@ http.route({
       );
     }
 
-    let payload: any;
+    let payload: unknown;
     try {
       payload = JSON.parse(rawBody);
     } catch {
@@ -87,26 +103,33 @@ http.route({
       });
     }
 
-    // Save event in database
-    const eventId = await ctx.runMutation(internal.githubEvents.saveEvent, {
+    const action =
+      isRecord(payload) && typeof payload.action === "string"
+        ? payload.action
+        : undefined;
+
+    const saved = await ctx.runMutation(internal.githubEvents.saveEvent, {
       deliveryId,
       event,
-      action: payload.action,
-      repository: payload.repository?.full_name,
-      sender: payload.sender?.login,
+      action,
+      repository: readNestedString(payload, "repository", "full_name"),
+      sender: readNestedString(payload, "sender", "login"),
       payload,
     });
 
-    // Schedule background processing
-    await ctx.scheduler.runAfter(0, internal.githubEvents.processEvent, {
-      eventId,
-    });
+    if (saved.status === "pending" || saved.status === "failed") {
+      await ctx.scheduler.runAfter(0, internal.githubEvents.processEvent, {
+        eventId: saved.eventId,
+      });
+    }
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Webhook received and scheduled for processing",
-        eventId,
+        message: saved.isNew
+          ? "Webhook received and scheduled for processing"
+          : "Webhook delivery already recorded",
+        eventId: saved.eventId,
         deliveryId,
       }),
       {

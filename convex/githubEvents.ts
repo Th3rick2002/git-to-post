@@ -1,5 +1,29 @@
 import { v } from "convex/values";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { internalMutation, query } from "./_generated/server";
+
+const eventStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("processing"),
+  v.literal("processed"),
+  v.literal("failed"),
+);
+
+const githubEventDocValidator = v.object({
+  _id: v.id("githubEvents"),
+  _creationTime: v.number(),
+  deliveryId: v.string(),
+  event: v.string(),
+  action: v.optional(v.string()),
+  repository: v.optional(v.string()),
+  sender: v.optional(v.string()),
+  payload: v.any(),
+  status: eventStatusValidator,
+  error: v.optional(v.string()),
+  processedAt: v.optional(v.number()),
+  draftId: v.optional(v.id("contentDrafts")),
+  skipReason: v.optional(v.string()),
+});
 
 export const saveEvent = internalMutation({
   args: {
@@ -10,89 +34,60 @@ export const saveEvent = internalMutation({
     sender: v.optional(v.string()),
     payload: v.any(),
   },
+  returns: v.object({
+    eventId: v.id("githubEvents"),
+    isNew: v.boolean(),
+    status: eventStatusValidator,
+  }),
   handler: async (ctx, args) => {
-    // Check if event already exists (deduplication by delivery ID)
     const existing = await ctx.db
       .query("githubEvents")
       .withIndex("by_delivery_id", (q) => q.eq("deliveryId", args.deliveryId))
       .first();
-
     if (existing) {
-      return existing._id;
+      return {
+        eventId: existing._id,
+        isNew: false,
+        status: existing.status,
+      };
     }
-
     const eventId = await ctx.db.insert("githubEvents", {
-      deliveryId: args.deliveryId,
-      event: args.event,
-      action: args.action,
-      repository: args.repository,
-      sender: args.sender,
-      payload: args.payload,
+      ...args,
       status: "pending",
     });
-
-    return eventId;
+    return { eventId, isNew: true, status: "pending" as const };
   },
 });
 
 export const processEvent = internalMutation({
-  args: {
-    eventId: v.id("githubEvents"),
-  },
+  args: { eventId: v.id("githubEvents") },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const event = await ctx.db.get(args.eventId);
-    if (!event) return;
-
-    await ctx.db.patch(args.eventId, {
-      status: "processing",
-    });
-
-    try {
-      // Logic to process the event according to type
-      // e.g. "push", "pull_request", "release", "issues", etc.
-      console.log(`Processing GitHub event [${event.event}] delivery: ${event.deliveryId}`);
-
-      // Example parsing logic based on event type:
-      if (event.event === "push") {
-        const commits = event.payload?.commits || [];
-        console.log(`Received ${commits.length} commits for repo ${event.repository}`);
-      } else if (event.event === "pull_request") {
-        console.log(`PR action: ${event.action} for repo ${event.repository}`);
-      } else if (event.event === "release") {
-        console.log(`Release created/published: ${event.payload?.release?.tag_name}`);
-      }
-
-      await ctx.db.patch(args.eventId, {
-        status: "processed",
-        processedAt: Date.now(),
-      });
-    } catch (error) {
-      await ctx.db.patch(args.eventId, {
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-      });
+    if (!event) {
+      return null;
     }
+    if (event.status === "processed" || event.status === "processing") {
+      return null;
+    }
+    await ctx.scheduler.runAfter(0, internal.postGeneration.enqueueFromEvent, {
+      eventId: event._id,
+    });
+    return null;
   },
 });
 
 export const list = query({
-  args: {
-    limit: v.optional(v.number()),
-  },
+  args: { limit: v.optional(v.number()) },
+  returns: v.array(githubEventDocValidator),
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 20;
-    return await ctx.db
-      .query("githubEvents")
-      .order("desc")
-      .take(limit);
+    const limit = Math.max(1, Math.min(50, Math.floor(args.limit ?? 20)));
+    return await ctx.db.query("githubEvents").order("desc").take(limit);
   },
 });
 
 export const getById = query({
-  args: {
-    id: v.id("githubEvents"),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
-  },
+  args: { id: v.id("githubEvents") },
+  returns: v.union(githubEventDocValidator, v.null()),
+  handler: async (ctx, args) => await ctx.db.get(args.id),
 });
