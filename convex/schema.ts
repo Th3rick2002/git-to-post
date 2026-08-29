@@ -321,4 +321,28 @@ export default defineSchema({
   })
     .index("by_draft_id", ["draftId"])
     .index("by_draft_id_and_storage_id", ["draftId", "storageId"]),
+
+  repoSettings: defineTable({
+    ownerGithubUserId: v.number(),
+    ownerTokenIdentifier: v.optional(v.string()),
+    githubRepositoryId: v.number(),
+    integrationMethod: v.union(v.literal("grok_bot"), v.literal("manual")),
+    triggers: v.object({
+      newReleases: v.boolean(),
+      tags: v.boolean(),
+      commitsOnMain: v.boolean(),
+    }),
+    artifacts: v.object({
+      releaseNotes: v.boolean(),
+      changelog: v.boolean(),
+      socialCard: v.boolean(),
+      apiDocs: v.boolean(),
+      execSummary: v.boolean(),
+    }),
+  })
+    .index("by_owner_github_user_id", ["ownerGithubUserId"])
+    .index("by_owner_github_user_id_and_github_repository_id", [
+      "ownerGithubUserId",
+      "githubRepositoryId",
+    ]),
 });

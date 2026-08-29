@@ -9,11 +9,10 @@ export async function GET(request: NextRequest) {
     process.env.NEXT_PUBLIC_SITE_URL || request.nextUrl.origin || "http://localhost:3000";
 
   if (!installationId) {
-    return NextResponse.redirect(`${siteUrl}/?error=missing_installation_id`);
+    return NextResponse.redirect(`${siteUrl}/onboarding?error=missing_installation_id`);
   }
 
-  // Redirect directly to dashboard with installation details to complete sync in Convex
-  const redirectUrl = `${siteUrl}/?installed=true&installation_id=${installationId}&state=${encodeURIComponent(
+  const redirectUrl = `${siteUrl}/onboarding?installed=true&installation_id=${installationId}&state=${encodeURIComponent(
     state
   )}`;
 

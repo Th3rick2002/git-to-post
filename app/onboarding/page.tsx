@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { OnboardingWizard } from "./onboarding-wizard";
 
 export const metadata: Metadata = {
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function OnboardingPage() {
-  return <OnboardingWizard />;
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background p-8 text-sm text-on-surface-variant">Loading...</div>}>
+      <OnboardingWizard />
+    </Suspense>
+  );
 }

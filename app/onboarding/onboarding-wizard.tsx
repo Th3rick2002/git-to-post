@@ -1,126 +1,79 @@
 "use client";
 
-import { useState } from "react";
-import { Code2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { Code2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { writeOnboardingComplete } from "./onboarding-storage";
-import { DEFAULT_REPO, parseAndFetchRepo } from "./presets";
+import { api } from "../../convex/_generated/api";
+import { useGithubInstallCallback } from "../github/use-github-install-callback";
+import { useSession } from "@/lib/auth-client";
+import { readOnboardingComplete, writeOnboardingComplete } from "./onboarding-storage";
 import { StepArtifacts } from "./step-artifacts";
 import { StepEnd } from "./step-end";
 import { StepIntegrations } from "./step-integrations";
-import { StepSourceFetched } from "./step-source-fetched";
-import { StepSourceInitial } from "./step-source-initial";
+import { StepSourceConnect } from "./step-source-connect";
 import { Stepper } from "./stepper";
-import type {
-  ArtifactConfig,
-  IntegrationMethod,
-  OnboardingState,
-  StepId,
-  TriggersConfig,
-} from "./types";
+import type { OnboardingState, StepId } from "./types";
 
-const INITIAL_STATE: OnboardingState = {
-  currentStep: 1,
-  furthestStep: 1,
-  isComplete: false,
-  sourceScreenMode: "initial",
-  repoUrl: "https://github.com/username/repository",
-  repoData: DEFAULT_REPO,
-  triggers: {
-    newReleases: true,
-    tags: false,
-    commitsOnMain: false,
-  },
-  artifacts: {
-    releaseNotes: false,
-    changelog: false,
-    socialCard: true,
-    apiDocs: false,
-    execSummary: false,
-  },
-  integrationMethod: "grok_bot",
-  grokBotAuthorized: true,
-  manualEnabled: false,
-  isFetching: false,
-  fetchError: null,
-};
+const INITIAL_STATE: Pick<OnboardingState, "currentStep" | "furthestStep" | "isComplete" | "artifacts" | "integrationMethod"> =
+  {
+    currentStep: 1,
+    furthestStep: 1,
+    isComplete: false,
+    artifacts: {
+      releaseNotes: false,
+      changelog: false,
+      socialCard: true,
+      apiDocs: false,
+      execSummary: false,
+    },
+    integrationMethod: "manual",
+  };
 
 export function OnboardingWizard() {
   const router = useRouter();
-  const [state, setState] = useState<OnboardingState>(INITIAL_STATE);
+  const { data: session, isPending: authLoading } = useSession();
+  const [state, setState] = useState(INITIAL_STATE);
   const [notification, setNotification] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [gateReady, setGateReady] = useState(false);
+
+  const isSignedIn = Boolean(session?.user);
+  const { errorMessage, isHandlingCallback, setErrorMessage, syncStatus } =
+    useGithubInstallCallback(() => (readOnboardingComplete() ? "/" : "/onboarding"));
+
+  const beginInstallation = useMutation(api.githubConnections.beginInstallation);
+  const claimInstallations = useMutation(api.githubConnections.claimInstallationsForCurrentUser);
+  const repositories = useQuery(api.githubConnections.listRepositories, isSignedIn ? {} : "skip");
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+    if (!isSignedIn) {
+      router.replace("/login");
+      return;
+    }
+    if (readOnboardingComplete() && !isHandlingCallback) {
+      router.replace("/");
+      return;
+    }
+    setGateReady(true);
+  }, [authLoading, isHandlingCallback, isSignedIn, router]);
+
+  useEffect(() => {
+    if (!isSignedIn) {
+      return;
+    }
+    void claimInstallations();
+  }, [claimInstallations, isSignedIn]);
 
   function showToast(msg: string) {
     setNotification(msg);
     window.setTimeout(() => {
       setNotification(null);
     }, 2800);
-  }
-
-  async function handleFetchRepo() {
-    setState((prev) => ({ ...prev, isFetching: true, fetchError: null }));
-    try {
-      const data = await parseAndFetchRepo(state.repoUrl);
-      setState((prev) => ({
-        ...prev,
-        isFetching: false,
-        repoData: data,
-        sourceScreenMode: "fetched",
-      }));
-      showToast(`Connected repository: ${data.fullName}`);
-    } catch {
-      setState((prev) => ({
-        ...prev,
-        isFetching: false,
-        sourceScreenMode: "fetched",
-      }));
-    }
-  }
-
-  async function handleSelectPreset(url: string) {
-    setState((prev) => ({ ...prev, repoUrl: url, isFetching: true }));
-    const data = await parseAndFetchRepo(url);
-    setState((prev) => ({
-      ...prev,
-      repoUrl: url,
-      repoData: data,
-      isFetching: false,
-      sourceScreenMode: "fetched",
-    }));
-    showToast(`Loaded preset: ${data.fullName}`);
-  }
-
-  function handleToggleTrigger(key: keyof TriggersConfig) {
-    setState((prev) => ({
-      ...prev,
-      triggers: { ...prev.triggers, [key]: !prev.triggers[key] },
-    }));
-  }
-
-  function handleToggleArtifact(key: keyof ArtifactConfig) {
-    if (key !== "socialCard") {
-      return;
-    }
-    setState((prev) => ({
-      ...prev,
-      artifacts: { ...prev.artifacts, socialCard: !prev.artifacts.socialCard },
-    }));
-  }
-
-  function handleSelectMethod(method: IntegrationMethod) {
-    setState((prev) => ({
-      ...prev,
-      integrationMethod: method,
-      grokBotAuthorized: method === "grok_bot",
-      manualEnabled: method === "manual",
-    }));
-  }
-
-  function handleReset() {
-    writeOnboardingComplete(false);
-    setState(INITIAL_STATE);
-    showToast("Onboarding state reset to initial screen");
   }
 
   function goToStep(step: StepId) {
@@ -146,6 +99,28 @@ export function OnboardingWizard() {
     router.replace("/");
   }
 
+  async function handleConnectGitHub() {
+    try {
+      setConnecting(true);
+      setErrorMessage(null);
+      const { state: installState } = await beginInstallation();
+      router.push(`/api/github/install/start?state=${encodeURIComponent(installState)}`);
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Error iniciando la conexión con GitHub.",
+      );
+      setConnecting(false);
+    }
+  }
+
+  if (authLoading || !gateReady) {
+    return (
+      <div className="min-h-screen bg-background p-8 text-sm text-on-surface-variant">Checking session...</div>
+    );
+  }
+
+  const repos = repositories ?? [];
+
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background p-4 lg:p-8">
       <div
@@ -159,21 +134,11 @@ export function OnboardingWizard() {
 
       <main className="glass-elevated relative z-10 flex min-h-[620px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-primary/15 shadow-[0_0_50px_color-mix(in_srgb,var(--primary)_6%,transparent)]">
         <header className="flex flex-col gap-6 border-b border-primary/10 bg-surface/40 p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/30 bg-primary/15 text-primary shadow-[0_0_12px_color-mix(in_srgb,var(--primary)_20%,transparent)]">
-                <Code2 className="h-5 w-5 text-primary" />
-              </div>
-              <h1 className="text-2xl font-bold tracking-tight text-on-surface">PublicaDev Onboarding</h1>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/30 bg-primary/15 text-primary shadow-[0_0_12px_color-mix(in_srgb,var(--primary)_20%,transparent)]">
+              <Code2 className="h-5 w-5 text-primary" />
             </div>
-            <button
-              type="button"
-              onClick={handleReset}
-              title="Close modal"
-              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <h1 className="text-2xl font-bold tracking-tight text-on-surface">PublicaDev Onboarding</h1>
           </div>
           <Stepper
             currentStep={state.currentStep}
@@ -185,50 +150,39 @@ export function OnboardingWizard() {
 
         <div className="relative flex flex-grow flex-col p-6 sm:p-8">
           <AnimatePresence mode="wait">
-            {state.currentStep === 1 &&
-              (state.sourceScreenMode === "initial" ? (
-                <StepSourceInitial
-                  key="screen-1-initial"
-                  repoUrl={state.repoUrl}
-                  onChangeRepoUrl={(val) =>
-                    setState((prev) => ({ ...prev, repoUrl: val, fetchError: null }))
-                  }
-                  onSubmit={() => {
-                    void handleFetchRepo();
-                  }}
-                  isFetching={state.isFetching}
-                  onSelectPreset={(url) => {
-                    void handleSelectPreset(url);
-                  }}
-                />
-              ) : (
-                <StepSourceFetched
-                  key="screen-2-fetched"
-                  repoData={state.repoData}
-                  triggers={state.triggers}
-                  onToggleTrigger={handleToggleTrigger}
-                  onEditRepo={() => setState((prev) => ({ ...prev, sourceScreenMode: "initial" }))}
-                  onContinue={() => continueToStep(2)}
-                />
-              ))}
+            {state.currentStep === 1 ? (
+              <StepSourceConnect
+                key="step-1-sources"
+                repos={repos}
+                reposLoading={repositories === undefined}
+                connecting={connecting}
+                syncStatus={syncStatus}
+                errorMessage={errorMessage}
+                onConnectGitHub={() => {
+                  void handleConnectGitHub();
+                }}
+                onContinue={() => {
+                  showToast(
+                    repos.length === 1
+                      ? `Connected ${repos[0].fullName}`
+                      : `Connected ${repos.length} repositories`,
+                  );
+                  continueToStep(2);
+                }}
+              />
+            ) : null}
 
             {state.currentStep === 2 ? (
               <StepArtifacts
                 key="step-2-artifacts"
-                artifacts={state.artifacts}
-                onToggleArtifact={handleToggleArtifact}
                 onContinue={() => continueToStep(3)}
-                onBack={() =>
-                  setState((prev) => ({ ...prev, currentStep: 1, sourceScreenMode: "fetched" }))
-                }
+                onBack={() => goToStep(1)}
               />
             ) : null}
 
             {state.currentStep === 3 ? (
               <StepIntegrations
                 key="step-3-integrations"
-                selectedMethod={state.integrationMethod}
-                onSelectMethod={handleSelectMethod}
                 onContinue={() => continueToStep(4)}
                 onBack={() => goToStep(2)}
               />

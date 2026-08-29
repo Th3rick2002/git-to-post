@@ -20,6 +20,7 @@ import type * as lib_owner from "../lib/owner.js";
 import type * as postGeneration from "../postGeneration.js";
 import type * as postGenerationActions from "../postGenerationActions.js";
 import type * as postGenerationWorkflow from "../postGenerationWorkflow.js";
+import type * as repoSettings from "../repoSettings.js";
 import type * as tasks from "../tasks.js";
 
 import type {
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   postGeneration: typeof postGeneration;
   postGenerationActions: typeof postGenerationActions;
   postGenerationWorkflow: typeof postGenerationWorkflow;
+  repoSettings: typeof repoSettings;
   tasks: typeof tasks;
 }>;
 
