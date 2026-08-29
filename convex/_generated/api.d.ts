@@ -8,9 +8,11 @@
  * @module
  */
 
+import type * as auth from "../auth.js";
 import type * as githubConnections from "../githubConnections.js";
 import type * as githubEvents from "../githubEvents.js";
 import type * as http from "../http.js";
+import type * as lib_githubIdentity from "../lib/githubIdentity.js";
 import type * as tasks from "../tasks.js";
 
 import type {
@@ -20,9 +22,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  auth: typeof auth;
   githubConnections: typeof githubConnections;
   githubEvents: typeof githubEvents;
   http: typeof http;
+  "lib/githubIdentity": typeof lib_githubIdentity;
   tasks: typeof tasks;
 }>;
 
@@ -52,4 +56,8 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  betterAuth: import("@convex-dev/better-auth/_generated/component.js").ComponentApi<"betterAuth">;
+  agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
+  workflow: import("@convex-dev/workflow/_generated/component.js").ComponentApi<"workflow">;
+};

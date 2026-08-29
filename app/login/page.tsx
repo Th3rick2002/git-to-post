@@ -51,7 +51,7 @@ export default function LoginPage() {
         <div className="space-y-3 pt-2">
           <button
             onClick={handleGitHubLogin}
-            disabled={loading || isPending}
+            disabled={loading}
             className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-medium py-3 px-4 rounded-xl hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed shadow"
           >
             <svg

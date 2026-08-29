@@ -5,9 +5,11 @@ import {
   internalQuery,
   mutation,
   query,
+  type MutationCtx,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { importPKCS8, SignJWT } from "jose";
+import { getGithubUserId, requireGithubUserId } from "./lib/githubIdentity";
 
 /**
  * Creates a JWT to authenticate as the GitHub App.
@@ -27,28 +29,56 @@ async function createGitHubAppJWT(appId: string, privateKeyPem: string): Promise
     .sign(privateKey);
 }
 
+async function applyOwnerToInstallation(
+  ctx: MutationCtx,
+  installationId: number,
+  ownerGithubUserId: number
+) {
+  const inst = await ctx.db
+    .query("githubInstallations")
+    .withIndex("by_installation_id", (q) => q.eq("installationId", installationId))
+    .first();
+
+  if (inst && inst.ownerGithubUserId !== ownerGithubUserId) {
+    await ctx.db.patch(inst._id, { ownerGithubUserId });
+  }
+
+  const repos = await ctx.db
+    .query("githubRepositories")
+    .withIndex("by_installation_id", (q) => q.eq("installationId", installationId))
+    .collect();
+  for (const repo of repos) {
+    if (repo.ownerGithubUserId !== ownerGithubUserId) {
+      await ctx.db.patch(repo._id, { ownerGithubUserId });
+    }
+  }
+
+  const events = await ctx.db
+    .query("githubEvents")
+    .withIndex("by_installation_id", (q) => q.eq("installationId", installationId))
+    .collect();
+  for (const event of events) {
+    if (event.ownerGithubUserId !== ownerGithubUserId) {
+      await ctx.db.patch(event._id, { ownerGithubUserId });
+    }
+  }
+}
+
 /**
  * 1. Step 1: Begin installation
- * Creates a secure random state tied to the authenticated user with a 15 min TTL.
+ * Creates a secure random state tied to the authenticated GitHub user with a 15 min TTL.
  */
 export const beginInstallation = mutation({
-  args: {
-    ownerTokenIdentifier: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const owner = identity?.tokenIdentifier || args.ownerTokenIdentifier;
-
-    if (!owner) {
-      throw new Error("Debes iniciar sesión para conectar repositorios.");
-    }
+  args: {},
+  handler: async (ctx) => {
+    const ownerGithubUserId = await requireGithubUserId(ctx);
 
     const state = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
-    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutos
+    const expiresAt = Date.now() + 15 * 60 * 1000;
 
     await ctx.db.insert("githubInstallationIntents", {
       state,
-      ownerTokenIdentifier: owner,
+      ownerGithubUserId,
       expiresAt,
     });
 
@@ -84,7 +114,7 @@ export const saveInstallationAndRepos = internalMutation({
   args: {
     state: v.string(),
     installationId: v.number(),
-    ownerTokenIdentifier: v.string(),
+    ownerGithubUserId: v.number(),
     accountId: v.number(),
     accountLogin: v.string(),
     accountType: v.string(),
@@ -102,7 +132,6 @@ export const saveInstallationAndRepos = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    // 1. Mark intent as used
     const intent = await ctx.db
       .query("githubInstallationIntents")
       .withIndex("by_state", (q) => q.eq("state", args.state))
@@ -115,7 +144,6 @@ export const saveInstallationAndRepos = internalMutation({
       });
     }
 
-    // 2. Save or update installation
     const existingInstallation = await ctx.db
       .query("githubInstallations")
       .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))
@@ -123,7 +151,7 @@ export const saveInstallationAndRepos = internalMutation({
 
     if (existingInstallation) {
       await ctx.db.patch(existingInstallation._id, {
-        ownerTokenIdentifier: args.ownerTokenIdentifier,
+        ownerGithubUserId: args.ownerGithubUserId,
         accountId: args.accountId,
         accountLogin: args.accountLogin,
         accountType: args.accountType,
@@ -134,7 +162,7 @@ export const saveInstallationAndRepos = internalMutation({
     } else {
       await ctx.db.insert("githubInstallations", {
         installationId: args.installationId,
-        ownerTokenIdentifier: args.ownerTokenIdentifier,
+        ownerGithubUserId: args.ownerGithubUserId,
         accountId: args.accountId,
         accountLogin: args.accountLogin,
         accountType: args.accountType,
@@ -144,7 +172,6 @@ export const saveInstallationAndRepos = internalMutation({
       });
     }
 
-    // 3. Mark old repos for this installation as inactive
     const existingRepos = await ctx.db
       .query("githubRepositories")
       .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))
@@ -158,7 +185,6 @@ export const saveInstallationAndRepos = internalMutation({
       }
     }
 
-    // 4. Insert or update incoming repositories
     for (const r of args.repositories) {
       const existing = await ctx.db
         .query("githubRepositories")
@@ -168,7 +194,7 @@ export const saveInstallationAndRepos = internalMutation({
       if (existing) {
         await ctx.db.patch(existing._id, {
           installationId: args.installationId,
-          ownerTokenIdentifier: args.ownerTokenIdentifier,
+          ownerGithubUserId: args.ownerGithubUserId,
           owner: r.owner,
           name: r.name,
           fullName: r.fullName,
@@ -181,7 +207,7 @@ export const saveInstallationAndRepos = internalMutation({
         await ctx.db.insert("githubRepositories", {
           githubRepositoryId: r.id,
           installationId: args.installationId,
-          ownerTokenIdentifier: args.ownerTokenIdentifier,
+          ownerGithubUserId: args.ownerGithubUserId,
           owner: r.owner,
           name: r.name,
           fullName: r.fullName,
@@ -192,6 +218,8 @@ export const saveInstallationAndRepos = internalMutation({
         });
       }
     }
+
+    await applyOwnerToInstallation(ctx, args.installationId, args.ownerGithubUserId);
 
     return { success: true };
   },
@@ -206,13 +234,17 @@ export const completeInstallation = action({
     state: v.string(),
     code: v.optional(v.string()),
     installationId: v.number(),
-    ownerTokenIdentifier: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const owner = identity?.tokenIdentifier || args.ownerTokenIdentifier;
+    const ownerGithubUserId = await ctx.runQuery(
+      internal.lib.githubIdentity.getCurrentGithubUserId,
+      {}
+    );
 
-    // 1. Verify intent
+    if (ownerGithubUserId === null) {
+      throw new Error("Debes iniciar sesión para conectar repositorios.");
+    }
+
     const intent = await ctx.runQuery(internal.githubConnections.getValidIntent, {
       state: args.state,
     });
@@ -221,11 +253,12 @@ export const completeInstallation = action({
       throw new Error("Estado de instalación inválido o expirado.");
     }
 
-    if (owner && intent.ownerTokenIdentifier !== owner) {
+    if (
+      intent.ownerGithubUserId !== undefined &&
+      intent.ownerGithubUserId !== ownerGithubUserId
+    ) {
       throw new Error("El intento de instalación no pertenece a este usuario.");
     }
-
-    const finalOwner = owner || intent.ownerTokenIdentifier;
 
     const appId = process.env.GITHUB_APP_ID;
     const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
@@ -234,10 +267,8 @@ export const completeInstallation = action({
       throw new Error("Faltan variables de entorno GITHUB_APP_ID o GITHUB_APP_PRIVATE_KEY en Convex.");
     }
 
-    // 2. Generate GitHub App JWT
     const appJwt = await createGitHubAppJWT(appId, privateKey);
 
-    // 3. Create Installation Access Token
     const tokenRes = await fetch(
       `https://api.github.com/app/installations/${args.installationId}/access_tokens`,
       {
@@ -255,10 +286,17 @@ export const completeInstallation = action({
       throw new Error(`Error obteniendo token de instalación: ${tokenRes.status} ${errText}`);
     }
 
-    const tokenData = (await tokenRes.json()) as { token: string };
+    const tokenData: unknown = await tokenRes.json();
+    if (
+      typeof tokenData !== "object" ||
+      tokenData === null ||
+      !("token" in tokenData) ||
+      typeof tokenData.token !== "string"
+    ) {
+      throw new Error("Respuesta inválida al obtener token de instalación.");
+    }
     const installationToken = tokenData.token;
 
-    // 4. Fetch Installation details
     const installRes = await fetch(
       `https://api.github.com/app/installations/${args.installationId}`,
       {
@@ -274,12 +312,32 @@ export const completeInstallation = action({
       throw new Error("No se pudo obtener información de la instalación en GitHub.");
     }
 
-    const installData = (await installRes.json()) as {
-      account: { id: number; login: string; type: string };
-      repository_selection: string;
-    };
+    const installData: unknown = await installRes.json();
+    if (
+      typeof installData !== "object" ||
+      installData === null ||
+      !("account" in installData) ||
+      typeof installData.account !== "object" ||
+      installData.account === null
+    ) {
+      throw new Error("Respuesta inválida de la instalación en GitHub.");
+    }
 
-    // 5. Fetch repositories for this installation
+    const account = installData.account as {
+      id?: unknown;
+      login?: unknown;
+      type?: unknown;
+    };
+    const repositorySelection =
+      "repository_selection" in installData &&
+      typeof installData.repository_selection === "string"
+        ? installData.repository_selection
+        : "selected";
+
+    if (typeof account.id !== "number" || typeof account.login !== "string") {
+      throw new Error("La instalación de GitHub no incluye una cuenta válida.");
+    }
+
     const reposRes = await fetch(
       "https://api.github.com/installation/repositories?per_page=100",
       {
@@ -295,37 +353,59 @@ export const completeInstallation = action({
       throw new Error("No se pudieron listar los repositorios de la instalación.");
     }
 
-    const reposData = (await reposRes.json()) as {
-      repositories: Array<{
-        id: number;
-        name: string;
-        full_name: string;
-        owner: { login: string };
-        default_branch?: string;
-        private: boolean;
-        html_url: string;
-      }>;
-    };
+    const reposData: unknown = await reposRes.json();
+    if (
+      typeof reposData !== "object" ||
+      reposData === null ||
+      !("repositories" in reposData) ||
+      !Array.isArray(reposData.repositories)
+    ) {
+      throw new Error("Respuesta inválida al listar repositorios.");
+    }
 
-    const formattedRepos = reposData.repositories.map((r) => ({
-      id: r.id,
-      name: r.name,
-      fullName: r.full_name,
-      owner: r.owner.login,
-      defaultBranch: r.default_branch,
-      isPrivate: r.private,
-      htmlUrl: r.html_url,
-    }));
+    const formattedRepos = reposData.repositories.flatMap((r: unknown) => {
+      if (typeof r !== "object" || r === null) return [];
+      const repo = r as {
+        id?: unknown;
+        name?: unknown;
+        full_name?: unknown;
+        owner?: { login?: unknown };
+        default_branch?: unknown;
+        private?: unknown;
+        html_url?: unknown;
+      };
+      if (
+        typeof repo.id !== "number" ||
+        typeof repo.name !== "string" ||
+        typeof repo.full_name !== "string" ||
+        typeof repo.owner?.login !== "string" ||
+        typeof repo.private !== "boolean" ||
+        typeof repo.html_url !== "string"
+      ) {
+        return [];
+      }
+      return [
+        {
+          id: repo.id,
+          name: repo.name,
+          fullName: repo.full_name,
+          owner: repo.owner.login,
+          defaultBranch:
+            typeof repo.default_branch === "string" ? repo.default_branch : undefined,
+          isPrivate: repo.private,
+          htmlUrl: repo.html_url,
+        },
+      ];
+    });
 
-    // 6. Save in Convex via internalMutation
     await ctx.runMutation(internal.githubConnections.saveInstallationAndRepos, {
       state: args.state,
       installationId: args.installationId,
-      ownerTokenIdentifier: finalOwner,
-      accountId: installData.account.id,
-      accountLogin: installData.account.login,
-      accountType: installData.account.type || "User",
-      repositorySelection: installData.repository_selection || "selected",
+      ownerGithubUserId,
+      accountId: account.id,
+      accountLogin: account.login,
+      accountType: typeof account.type === "string" ? account.type : "User",
+      repositorySelection,
       repositories: formattedRepos,
     });
 
@@ -334,40 +414,64 @@ export const completeInstallation = action({
 });
 
 /**
- * List installations belonging to the user.
+ * Claim personal-account installs whose GitHub accountId is this user.
+ */
+export const claimInstallationsForCurrentUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const ownerGithubUserId = await requireGithubUserId(ctx);
+
+    const installs = await ctx.db
+      .query("githubInstallations")
+      .withIndex("by_account_id", (q) => q.eq("accountId", ownerGithubUserId))
+      .collect();
+
+    let claimed = 0;
+    for (const inst of installs) {
+      if (inst.ownerGithubUserId === ownerGithubUserId) {
+        continue;
+      }
+      await applyOwnerToInstallation(ctx, inst.installationId, ownerGithubUserId);
+      claimed += 1;
+    }
+
+    return { claimed };
+  },
+});
+
+/**
+ * List installations belonging to the signed-in GitHub user.
  */
 export const listInstallations = query({
-  args: {
-    ownerTokenIdentifier: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const owner = identity?.tokenIdentifier || args.ownerTokenIdentifier;
-    if (!owner) return [];
+  args: {},
+  handler: async (ctx) => {
+    const ownerGithubUserId = await getGithubUserId(ctx);
+    if (ownerGithubUserId === null) return [];
 
     return await ctx.db
       .query("githubInstallations")
-      .withIndex("by_owner", (q) => q.eq("ownerTokenIdentifier", owner))
+      .withIndex("by_owner_github_user_id", (q) =>
+        q.eq("ownerGithubUserId", ownerGithubUserId)
+      )
       .filter((q) => q.eq(q.field("status"), "active"))
       .collect();
   },
 });
 
 /**
- * List repositories belonging to the user.
+ * List repositories belonging to the signed-in GitHub user.
  */
 export const listRepositories = query({
-  args: {
-    ownerTokenIdentifier: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const owner = identity?.tokenIdentifier || args.ownerTokenIdentifier;
-    if (!owner) return [];
+  args: {},
+  handler: async (ctx) => {
+    const ownerGithubUserId = await getGithubUserId(ctx);
+    if (ownerGithubUserId === null) return [];
 
     return await ctx.db
       .query("githubRepositories")
-      .withIndex("by_owner", (q) => q.eq("ownerTokenIdentifier", owner))
+      .withIndex("by_owner_github_user_id", (q) =>
+        q.eq("ownerGithubUserId", ownerGithubUserId)
+      )
       .filter((q) => q.eq(q.field("status"), "active"))
       .collect();
   },
@@ -386,7 +490,7 @@ export const findOwnerByInstallation = internalQuery({
       .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))
       .first();
 
-    return inst ? inst.ownerTokenIdentifier : null;
+    return inst?.ownerGithubUserId ?? null;
   },
 });
 
@@ -407,7 +511,6 @@ export const updateInstallationStatus = internalMutation({
     if (inst) {
       await ctx.db.patch(inst._id, { status: args.status, lastSyncedAt: Date.now() });
 
-      // If deleted or suspended, update repositories as inactive
       if (args.status !== "active") {
         const repos = await ctx.db
           .query("githubRepositories")
@@ -452,7 +555,6 @@ export const handleInstallationRepositoriesWebhook = internalMutation({
 
     if (!inst) return;
 
-    // Mark removed repositories as inactive
     for (const r of args.repositoriesRemoved) {
       const existing = await ctx.db
         .query("githubRepositories")
@@ -464,7 +566,6 @@ export const handleInstallationRepositoriesWebhook = internalMutation({
       }
     }
 
-    // Insert or activate added repositories
     for (const r of args.repositoriesAdded) {
       const existing = await ctx.db
         .query("githubRepositories")
@@ -476,13 +577,13 @@ export const handleInstallationRepositoriesWebhook = internalMutation({
       if (existing) {
         await ctx.db.patch(existing._id, {
           status: "active",
-          ownerTokenIdentifier: inst.ownerTokenIdentifier,
+          ownerGithubUserId: inst.ownerGithubUserId,
         });
       } else {
         await ctx.db.insert("githubRepositories", {
           githubRepositoryId: r.id,
           installationId: args.installationId,
-          ownerTokenIdentifier: inst.ownerTokenIdentifier,
+          ownerGithubUserId: inst.ownerGithubUserId,
           owner: owner || "",
           name: name || r.name,
           fullName: r.full_name,
@@ -497,6 +598,7 @@ export const handleInstallationRepositoriesWebhook = internalMutation({
 
 /**
  * Internal helper to handle `installation` webhook with action `created`.
+ * Does not invent an owner — completeInstallation or claim assigns ownerGithubUserId.
  */
 export const handleInstallationCreatedWebhook = internalMutation({
   args: {
@@ -515,14 +617,14 @@ export const handleInstallationCreatedWebhook = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    let ownerTokenIdentifier = args.accountLogin;
     const existing = await ctx.db
       .query("githubInstallations")
       .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))
       .first();
 
+    const ownerGithubUserId = existing?.ownerGithubUserId;
+
     if (existing) {
-      ownerTokenIdentifier = existing.ownerTokenIdentifier;
       await ctx.db.patch(existing._id, {
         accountId: args.accountId,
         accountLogin: args.accountLogin,
@@ -534,7 +636,6 @@ export const handleInstallationCreatedWebhook = internalMutation({
     } else {
       await ctx.db.insert("githubInstallations", {
         installationId: args.installationId,
-        ownerTokenIdentifier,
         accountId: args.accountId,
         accountLogin: args.accountLogin,
         accountType: args.accountType,
@@ -556,13 +657,13 @@ export const handleInstallationCreatedWebhook = internalMutation({
         await ctx.db.patch(existingRepo._id, {
           status: "active",
           installationId: args.installationId,
-          ownerTokenIdentifier,
+          ...(ownerGithubUserId !== undefined ? { ownerGithubUserId } : {}),
         });
       } else {
         await ctx.db.insert("githubRepositories", {
           githubRepositoryId: r.id,
           installationId: args.installationId,
-          ownerTokenIdentifier,
+          ownerGithubUserId,
           owner: owner || "",
           name: name || r.name,
           fullName: r.full_name,
@@ -574,4 +675,3 @@ export const handleInstallationCreatedWebhook = internalMutation({
     }
   },
 });
-

@@ -9,7 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "better-auth": "^1.7.2",
+    "@convex-dev/agent": "^0.7.1",
+    "@convex-dev/better-auth": "^0.12.5",
+    "@convex-dev/workflow": "^0.4.6",
+    "better-auth": "1.6.15",
     "convex": "^1.45.0",
     "jose": "^6.2.10",
     "lucide-react": "^1.37.0",

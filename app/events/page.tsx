@@ -2,6 +2,7 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { useSession } from "@/lib/auth-client";
 
 export default function EventsPage() {
   if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
@@ -21,7 +22,12 @@ export default function EventsPage() {
 }
 
 function EventsFeed() {
-  const events = useQuery(api.githubEvents.list, { limit: 20 });
+  const { data: session, isPending } = useSession();
+  const isSignedIn = Boolean(session?.user);
+  const events = useQuery(
+    api.githubEvents.list,
+    isSignedIn ? { limit: 20 } : "skip"
+  );
 
   return (
     <main className="min-h-screen bg-slate-950 p-8 font-sans text-slate-100">
@@ -72,7 +78,13 @@ function EventsFeed() {
             </h2>
           </div>
 
-          {!events ? (
+          {isPending ? (
+            <div className="text-sm text-slate-500">Cargando eventos...</div>
+          ) : !isSignedIn ? (
+            <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/50 p-8 text-center text-slate-400">
+              <p>Inicia sesión para ver los eventos de tus repositorios.</p>
+            </div>
+          ) : !events ? (
             <div className="text-sm text-slate-500">Cargando eventos...</div>
           ) : events.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/50 p-8 text-center text-slate-400">

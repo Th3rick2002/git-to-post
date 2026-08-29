@@ -16,19 +16,27 @@ function DashboardContent() {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const ownerTokenIdentifier = session?.user?.id || session?.user?.email || undefined;
+  const isSignedIn = Boolean(session?.user);
 
   const beginInstallation = useMutation(api.githubConnections.beginInstallation);
   const completeInstallation = useAction(api.githubConnections.completeInstallation);
+  const claimInstallations = useMutation(
+    api.githubConnections.claimInstallationsForCurrentUser
+  );
 
   const repositories = useQuery(
     api.githubConnections.listRepositories,
-    ownerTokenIdentifier ? { ownerTokenIdentifier } : "skip"
+    isSignedIn ? {} : "skip"
   );
   const events = useQuery(
     api.githubEvents.list,
-    ownerTokenIdentifier ? { ownerTokenIdentifier, limit: 20 } : "skip"
+    isSignedIn ? { limit: 20 } : "skip"
   );
+
+  useEffect(() => {
+    if (!isSignedIn) return;
+    void claimInstallations();
+  }, [isSignedIn, claimInstallations]);
 
   const processInstallationCallback = useCallback(
     async (installationId: number, state: string, code?: string) => {
@@ -38,7 +46,6 @@ function DashboardContent() {
           state,
           code,
           installationId,
-          ownerTokenIdentifier,
         });
         setSyncStatus(`¡Conexión exitosa! Sincronizados ${res.count} repositorios.`);
       } catch (err) {
@@ -49,7 +56,7 @@ function DashboardContent() {
         router.replace("/");
       }
     },
-    [completeInstallation, router, ownerTokenIdentifier]
+    [completeInstallation, router]
   );
 
   // Handle return from GitHub App installation callback
@@ -82,7 +89,7 @@ function DashboardContent() {
     try {
       setConnecting(true);
       setErrorMessage(null);
-      const { state } = await beginInstallation({ ownerTokenIdentifier });
+      const { state } = await beginInstallation();
       // Redirect to install start route with secure state
       router.push(`/api/github/install/start?state=${encodeURIComponent(state)}`);
     } catch (err) {
@@ -108,9 +115,7 @@ function DashboardContent() {
           </div>
 
           <div suppressHydrationWarning className="flex items-center gap-3">
-            {authLoading ? (
-              <span className="text-xs text-slate-500">Verificando sesión...</span>
-            ) : session?.user ? (
+            {session?.user ? (
               <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 py-1.5 px-3 rounded-xl">
                 <div className="text-xs text-slate-300">
                   <span className="text-slate-500">Sesión:</span>{" "}
@@ -124,12 +129,17 @@ function DashboardContent() {
                 </button>
               </div>
             ) : (
-              <Link
-                href="/login"
-                className="bg-white text-slate-950 font-semibold text-xs py-2 px-4 rounded-xl hover:bg-slate-100 transition shadow"
-              >
-                Iniciar sesión
-              </Link>
+              <div className="flex items-center gap-2">
+                {authLoading ? (
+                  <span className="text-xs text-slate-500">Verificando sesión...</span>
+                ) : null}
+                <Link
+                  href="/login"
+                  className="bg-white text-slate-950 font-semibold text-xs py-2 px-4 rounded-xl hover:bg-slate-100 transition shadow"
+                >
+                  Iniciar sesión
+                </Link>
+              </div>
             )}
           </div>
         </header>
@@ -197,7 +207,11 @@ function DashboardContent() {
             )}
           </h2>
 
-          {!repositories ? (
+          {!isSignedIn ? (
+            <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-400">
+              <p className="text-sm">Inicia sesión para ver tus repositorios conectados.</p>
+            </div>
+          ) : !repositories ? (
             <div className="text-slate-500 text-sm">Cargando repositorios...</div>
           ) : repositories.length === 0 ? (
             <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-400">
@@ -256,7 +270,11 @@ function DashboardContent() {
             </h2>
           </div>
 
-          {!events ? (
+          {!isSignedIn ? (
+            <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-400">
+              <p className="text-sm">Inicia sesión para ver eventos en tiempo real.</p>
+            </div>
+          ) : !events ? (
             <div className="text-slate-500 text-sm">Cargando eventos...</div>
           ) : events.length === 0 ? (
             <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-400">

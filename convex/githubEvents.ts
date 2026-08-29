@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, query } from "./_generated/server";
+import { getGithubUserId } from "./lib/githubIdentity";
 
 export const saveEvent = internalMutation({
   args: {
@@ -11,10 +12,9 @@ export const saveEvent = internalMutation({
     payload: v.any(),
     installationId: v.optional(v.number()),
     githubRepositoryId: v.optional(v.number()),
-    ownerTokenIdentifier: v.optional(v.string()),
+    ownerGithubUserId: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    // Check if event already exists (deduplication by delivery ID)
     const existing = await ctx.db
       .query("githubEvents")
       .withIndex("by_delivery_id", (q) => q.eq("deliveryId", args.deliveryId))
@@ -24,10 +24,9 @@ export const saveEvent = internalMutation({
       return existing._id;
     }
 
-    let owner = args.ownerTokenIdentifier;
+    let ownerGithubUserId = args.ownerGithubUserId;
 
-    // If owner was not directly supplied, look it up from the installation record
-    if (!owner && args.installationId) {
+    if (ownerGithubUserId === undefined && args.installationId) {
       const installation = await ctx.db
         .query("githubInstallations")
         .withIndex("by_installation_id", (q) =>
@@ -36,7 +35,7 @@ export const saveEvent = internalMutation({
         .first();
 
       if (installation) {
-        owner = installation.ownerTokenIdentifier;
+        ownerGithubUserId = installation.ownerGithubUserId;
       }
     }
 
@@ -50,7 +49,7 @@ export const saveEvent = internalMutation({
       status: "pending",
       installationId: args.installationId,
       githubRepositoryId: args.githubRepositoryId,
-      ownerTokenIdentifier: owner,
+      ownerGithubUserId,
     });
 
     return eventId;
@@ -70,15 +69,16 @@ export const processEvent = internalMutation({
     });
 
     try {
-      console.log(`Processing GitHub event [${event.event}] for delivery: ${event.deliveryId}`);
-
       if (event.event === "push") {
-        const commits = event.payload?.commits || [];
-        console.log(`Received ${commits.length} commits for repo ${event.repository}`);
-      } else if (event.event === "pull_request") {
-        console.log(`PR action: ${event.action} for repo ${event.repository}`);
-      } else if (event.event === "release") {
-        console.log(`Release created: ${event.payload?.release?.tag_name}`);
+        const payload = event.payload;
+        const commits =
+          typeof payload === "object" &&
+          payload !== null &&
+          "commits" in payload &&
+          Array.isArray(payload.commits)
+            ? payload.commits
+            : [];
+        void commits.length;
       }
 
       await ctx.db.patch(args.eventId, {
@@ -95,18 +95,15 @@ export const processEvent = internalMutation({
 });
 
 /**
- * List events belonging to the user.
+ * List events belonging to the signed-in GitHub user.
  */
 export const list = query({
   args: {
     limit: v.optional(v.number()),
-    ownerTokenIdentifier: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const owner = identity?.tokenIdentifier || args.ownerTokenIdentifier;
-
-    if (!owner) {
+    const ownerGithubUserId = await getGithubUserId(ctx);
+    if (ownerGithubUserId === null) {
       return [];
     }
 
@@ -114,8 +111,8 @@ export const list = query({
 
     return await ctx.db
       .query("githubEvents")
-      .withIndex("by_owner", (q) =>
-        q.eq("ownerTokenIdentifier", owner)
+      .withIndex("by_owner_github_user_id", (q) =>
+        q.eq("ownerGithubUserId", ownerGithubUserId)
       )
       .order("desc")
       .take(limit);
@@ -128,16 +125,13 @@ export const list = query({
 export const getById = query({
   args: {
     id: v.id("githubEvents"),
-    ownerTokenIdentifier: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const owner = identity?.tokenIdentifier || args.ownerTokenIdentifier;
-
-    if (!owner) return null;
+    const ownerGithubUserId = await getGithubUserId(ctx);
+    if (ownerGithubUserId === null) return null;
 
     const event = await ctx.db.get(args.id);
-    if (!event || event.ownerTokenIdentifier !== owner) {
+    if (!event || event.ownerGithubUserId !== ownerGithubUserId) {
       return null;
     }
 

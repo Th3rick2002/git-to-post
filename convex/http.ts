@@ -1,8 +1,11 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { authComponent, createAuth } from "./auth";
 
 const http = httpRouter();
+
+authComponent.registerRoutesLazy(http, createAuth);
 
 /**
  * Verifies HMAC-SHA256 signature from GitHub using Web Crypto API.
