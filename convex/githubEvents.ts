@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation, query } from "./_generated/server";
+import { getGithubUserId } from "./lib/githubIdentity";
 
 export const saveEvent = internalMutation({
   args: {
@@ -9,9 +10,11 @@ export const saveEvent = internalMutation({
     repository: v.optional(v.string()),
     sender: v.optional(v.string()),
     payload: v.any(),
+    installationId: v.optional(v.number()),
+    githubRepositoryId: v.optional(v.number()),
+    ownerGithubUserId: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    // Check if event already exists (deduplication by delivery ID)
     const existing = await ctx.db
       .query("githubEvents")
       .withIndex("by_delivery_id", (q) => q.eq("deliveryId", args.deliveryId))
@@ -19,6 +22,21 @@ export const saveEvent = internalMutation({
 
     if (existing) {
       return existing._id;
+    }
+
+    let ownerGithubUserId = args.ownerGithubUserId;
+
+    if (ownerGithubUserId === undefined && args.installationId) {
+      const installation = await ctx.db
+        .query("githubInstallations")
+        .withIndex("by_installation_id", (q) =>
+          q.eq("installationId", args.installationId!)
+        )
+        .first();
+
+      if (installation) {
+        ownerGithubUserId = installation.ownerGithubUserId;
+      }
     }
 
     const eventId = await ctx.db.insert("githubEvents", {
@@ -29,6 +47,9 @@ export const saveEvent = internalMutation({
       sender: args.sender,
       payload: args.payload,
       status: "pending",
+      installationId: args.installationId,
+      githubRepositoryId: args.githubRepositoryId,
+      ownerGithubUserId,
     });
 
     return eventId;
@@ -48,18 +69,16 @@ export const processEvent = internalMutation({
     });
 
     try {
-      // Logic to process the event according to type
-      // e.g. "push", "pull_request", "release", "issues", etc.
-      console.log(`Processing GitHub event [${event.event}] delivery: ${event.deliveryId}`);
-
-      // Example parsing logic based on event type:
       if (event.event === "push") {
-        const commits = event.payload?.commits || [];
-        console.log(`Received ${commits.length} commits for repo ${event.repository}`);
-      } else if (event.event === "pull_request") {
-        console.log(`PR action: ${event.action} for repo ${event.repository}`);
-      } else if (event.event === "release") {
-        console.log(`Release created/published: ${event.payload?.release?.tag_name}`);
+        const payload = event.payload;
+        const commits =
+          typeof payload === "object" &&
+          payload !== null &&
+          "commits" in payload &&
+          Array.isArray(payload.commits)
+            ? payload.commits
+            : [];
+        void commits.length;
       }
 
       await ctx.db.patch(args.eventId, {
@@ -75,24 +94,47 @@ export const processEvent = internalMutation({
   },
 });
 
+/**
+ * List events belonging to the signed-in GitHub user.
+ */
 export const list = query({
   args: {
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 20;
+    const ownerGithubUserId = await getGithubUserId(ctx);
+    if (ownerGithubUserId === null) {
+      return [];
+    }
+
+    const limit = args.limit ?? 50;
+
     return await ctx.db
       .query("githubEvents")
+      .withIndex("by_owner_github_user_id", (q) =>
+        q.eq("ownerGithubUserId", ownerGithubUserId)
+      )
       .order("desc")
       .take(limit);
   },
 });
 
+/**
+ * Get single event details with ownership check.
+ */
 export const getById = query({
   args: {
     id: v.id("githubEvents"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const ownerGithubUserId = await getGithubUserId(ctx);
+    if (ownerGithubUserId === null) return null;
+
+    const event = await ctx.db.get(args.id);
+    if (!event || event.ownerGithubUserId !== ownerGithubUserId) {
+      return null;
+    }
+
+    return event;
   },
 });

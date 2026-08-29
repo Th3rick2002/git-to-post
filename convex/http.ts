@@ -1,8 +1,11 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { authComponent, createAuth } from "./auth";
 
 const http = httpRouter();
+
+authComponent.registerRoutesLazy(http, createAuth);
 
 /**
  * Verifies HMAC-SHA256 signature from GitHub using Web Crypto API.
@@ -34,7 +37,6 @@ async function verifyGitHubSignature(
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
-  // Constant-time comparison to prevent timing attacks
   if (signatureHex.length !== calculatedSigHex.length) {
     return false;
   }
@@ -56,7 +58,7 @@ http.route({
 
     const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
-    // If a secret is set in Convex environment variables, verify the signature
+    // Verify HMAC-SHA256 signature
     if (webhookSecret) {
       const isValid = await verifyGitHubSignature(webhookSecret, signature, rawBody);
       if (!isValid) {
@@ -69,7 +71,9 @@ http.route({
 
     if (!deliveryId || !event) {
       return new Response(
-        JSON.stringify({ error: "Missing required GitHub headers (x-github-delivery or x-github-event)" }),
+        JSON.stringify({
+          error: "Missing required GitHub headers (x-github-delivery or x-github-event)",
+        }),
         {
           status: 400,
           headers: { "Content-Type": "application/json" },
@@ -77,9 +81,9 @@ http.route({
       );
     }
 
-    let payload: any;
+    let parsedBody: unknown;
     try {
-      payload = JSON.parse(rawBody);
+      parsedBody = JSON.parse(rawBody);
     } catch {
       return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
         status: 400,
@@ -87,17 +91,99 @@ http.route({
       });
     }
 
-    // Save event in database
+    if (typeof parsedBody !== "object" || parsedBody === null) {
+      return new Response(JSON.stringify({ error: "Payload must be an object" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const payload = parsedBody as Record<string, unknown>;
+    const action = typeof payload.action === "string" ? payload.action : undefined;
+
+    const installationObj =
+      typeof payload.installation === "object" && payload.installation !== null
+        ? (payload.installation as { id?: number })
+        : undefined;
+    const installationId = typeof installationObj?.id === "number" ? installationObj.id : undefined;
+
+    const repositoryObj =
+      typeof payload.repository === "object" && payload.repository !== null
+        ? (payload.repository as { id?: number; full_name?: string })
+        : undefined;
+    const repositoryId = typeof repositoryObj?.id === "number" ? repositoryObj.id : undefined;
+    const repositoryFullName = typeof repositoryObj?.full_name === "string" ? repositoryObj.full_name : undefined;
+
+    const senderObj =
+      typeof payload.sender === "object" && payload.sender !== null
+        ? (payload.sender as { login?: string })
+        : undefined;
+    const senderLogin = typeof senderObj?.login === "string" ? senderObj.login : undefined;
+
+    // Handle Lifecycle Events
+    if (event === "installation" && installationId) {
+      if (action === "created") {
+        const account =
+          typeof payload.account === "object" && payload.account !== null
+            ? (payload.account as { id?: number; login?: string; type?: string })
+            : undefined;
+        const repos = Array.isArray(payload.repositories)
+          ? (payload.repositories as Array<{ id: number; name: string; full_name: string; private: boolean }>)
+          : [];
+        await ctx.runMutation(internal.githubConnections.handleInstallationCreatedWebhook, {
+          installationId,
+          accountId: account?.id || 0,
+          accountLogin: account?.login || senderLogin || "unknown",
+          accountType: account?.type || "User",
+          repositorySelection:
+            typeof payload.repository_selection === "string"
+              ? payload.repository_selection
+              : "selected",
+          repositories: repos,
+        });
+      } else if (action === "deleted") {
+        await ctx.runMutation(internal.githubConnections.updateInstallationStatus, {
+          installationId,
+          status: "deleted",
+        });
+      } else if (action === "suspend") {
+        await ctx.runMutation(internal.githubConnections.updateInstallationStatus, {
+          installationId,
+          status: "suspended",
+        });
+      } else if (action === "unsuspend") {
+        await ctx.runMutation(internal.githubConnections.updateInstallationStatus, {
+          installationId,
+          status: "active",
+        });
+      }
+    } else if (event === "installation_repositories" && installationId) {
+      const added = Array.isArray(payload.repositories_added)
+        ? (payload.repositories_added as Array<{ id: number; name: string; full_name: string; private: boolean }>)
+        : [];
+      const removed = Array.isArray(payload.repositories_removed)
+        ? (payload.repositories_removed as Array<{ id: number; name: string; full_name: string }>)
+        : [];
+
+      await ctx.runMutation(internal.githubConnections.handleInstallationRepositoriesWebhook, {
+        installationId,
+        repositoriesAdded: added,
+        repositoriesRemoved: removed,
+      });
+    }
+
+    // Save and schedule general events (push, pull_request, release, issues, etc.)
     const eventId = await ctx.runMutation(internal.githubEvents.saveEvent, {
       deliveryId,
       event,
-      action: payload.action,
-      repository: payload.repository?.full_name,
-      sender: payload.sender?.login,
+      action,
+      repository: repositoryFullName,
+      sender: senderLogin,
       payload,
+      installationId,
+      githubRepositoryId: repositoryId,
     });
 
-    // Schedule background processing
     await ctx.scheduler.runAfter(0, internal.githubEvents.processEvent, {
       eventId,
     });
@@ -105,7 +191,7 @@ http.route({
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Webhook received and scheduled for processing",
+        message: "Webhook received",
         eventId,
         deliveryId,
       }),
