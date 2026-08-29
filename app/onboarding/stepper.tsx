@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import type { StepId } from "./types";
 
 const STEPS = [
-  { id: 1, label: "Source" },
+  { id: 1, label: "Sources" },
   { id: 2, label: "Artifacts" },
   { id: 3, label: "Integrations" },
   { id: 4, label: "End" },

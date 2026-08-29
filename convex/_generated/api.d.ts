@@ -13,6 +13,7 @@ import type * as githubConnections from "../githubConnections.js";
 import type * as githubEvents from "../githubEvents.js";
 import type * as http from "../http.js";
 import type * as lib_githubIdentity from "../lib/githubIdentity.js";
+import type * as repoSettings from "../repoSettings.js";
 import type * as tasks from "../tasks.js";
 
 import type {
@@ -27,6 +28,7 @@ declare const fullApi: ApiFromModules<{
   githubEvents: typeof githubEvents;
   http: typeof http;
   "lib/githubIdentity": typeof lib_githubIdentity;
+  repoSettings: typeof repoSettings;
   tasks: typeof tasks;
 }>;
 

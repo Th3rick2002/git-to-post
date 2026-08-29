@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signIn, useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { readOnboardingComplete } from "../onboarding/onboarding-storage";
 
 export default function LoginPage() {
   const { data: session, isPending } = useSession();
@@ -11,8 +12,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!session?.user) {
+      return;
+    }
+    router.replace(readOnboardingComplete() ? "/" : "/onboarding");
+  }, [router, session?.user]);
+
   if (session?.user) {
-    router.push("/");
     return null;
   }
 
@@ -22,7 +29,7 @@ export default function LoginPage() {
       setError(null);
       await signIn.social({
         provider: "github",
-        callbackURL: "/",
+        callbackURL: "/onboarding",
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesión con GitHub");
@@ -31,34 +38,38 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-xl space-y-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center justify-center gap-2">
-            🚀 PublicaDev
-          </h1>
-          <p className="text-sm text-slate-400">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed top-[-20%] left-[-10%] h-[50%] w-[50%] rounded-full bg-primary/10 blur-[130px]"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed right-[-10%] bottom-[-20%] h-[45%] w-[45%] rounded-full bg-tertiary/10 blur-[130px]"
+      />
+
+      <div className="glass-elevated relative z-10 w-full max-w-md space-y-6 rounded-2xl p-8">
+        <div className="space-y-2 text-center">
+          <h1 className="text-2xl font-bold tracking-tight text-on-surface">PublicaDev</h1>
+          <p className="text-sm text-on-surface-variant">
             Conecta tus repositorios y automatiza tus publicaciones desde tus commits y releases.
           </p>
         </div>
 
-        {error && (
-          <div className="bg-rose-950/50 border border-rose-900 text-rose-300 text-xs p-3 rounded-lg text-center">
+        {error ? (
+          <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-center text-xs text-error">
             {error}
           </div>
-        )}
+        ) : null}
 
         <div className="space-y-3 pt-2">
           <button
-            onClick={handleGitHubLogin}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-medium py-3 px-4 rounded-xl hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed shadow"
+            type="button"
+            onClick={() => void handleGitHubLogin()}
+            disabled={loading || isPending}
+            className="flex w-full cursor-pointer items-center justify-center gap-3 rounded-xl bg-on-surface px-4 py-3 font-medium text-background transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <svg
-              className="w-5 h-5 fill-current"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
+            <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
               <path
                 fillRule="evenodd"
                 clipRule="evenodd"
@@ -69,11 +80,8 @@ export default function LoginPage() {
           </button>
         </div>
 
-        <div className="text-center pt-2">
-          <Link
-            href="/"
-            className="text-xs text-slate-400 hover:text-slate-200 transition"
-          >
+        <div className="pt-2 text-center">
+          <Link href="/" className="text-xs text-on-surface-variant transition hover:text-on-surface">
             ← Volver al inicio
           </Link>
         </div>
