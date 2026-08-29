@@ -66,7 +66,8 @@ Rules:
 - Markdown must be a useful changelog with headings and bullets.
 - breakingChanges must be empty unless the evidence explicitly proves one.
 - Return compact evidence citations such as file paths, commit SHAs, PR numbers, or release notes. Do not expose private reasoning.
-- Produce content in the requested locale and tone.
+- Write title, summary, X thread, LinkedIn post, changelog, highlights, breaking changes, and hashtags in the same natural language as the repository evidence (commit messages, titles, release notes). Do not default to English when that evidence is in another language.
+- Tone still applies in that language.
 - The visual brief is for an abstract editorial image: no logos, no product names, no text, no UI, no icons, and no watermark.`;
 
 function createWriter() {

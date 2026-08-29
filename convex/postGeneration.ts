@@ -17,10 +17,12 @@ import {
 } from "./_generated/server";
 import { getGithubUserId } from "./lib/githubIdentity";
 import { ownerFromIdentity } from "./lib/owner";
+import { detectContentLocale } from "./lib/contentLocale";
 import {
   DEFAULT_GENERATION_POLICY,
   normalizeGitHubEvent,
   type GenerationPolicy,
+  type NormalizedGenerationContext,
 } from "./lib/githubEvent";
 import {
   changeAnalysisValidator,
@@ -37,8 +39,8 @@ import {
 } from "./schema";
 
 const TEXT_MODEL = "google/gemini-2.5-flash";
-const IMAGE_MODEL = "meta/muse-image";
-const PROMPT_VERSION = "github-evidence-v2";
+const IMAGE_MODEL = "google/gemini-2.5-flash-image";
+const PROMPT_VERSION = "github-evidence-v3";
 const workflows = new WorkflowManager(components.workflow);
 
 const referenceRoleValidator = v.union(
@@ -105,6 +107,7 @@ const generationInputValidator = v.object({
   trigger: triggerValidator,
   tone: toneValidator,
   locale: v.string(),
+  localeLocked: v.boolean(),
   imageMode: imageModeValidator,
   requestedPalette: v.optional(v.array(v.string())),
   title: v.string(),
@@ -127,6 +130,20 @@ function capStrings(values: string[], count: number, max: number): string[] {
     .map((value) => capText(value, max))
     .filter(Boolean)
     .slice(0, count);
+}
+
+function contextFromRecentEvent(
+  event: Doc<"githubEvents"> | null,
+): NormalizedGenerationContext | null {
+  if (!event) {
+    return null;
+  }
+  const normalized = normalizeGitHubEvent(event, {
+    generateOnPush: true,
+    generateOnVersionTag: true,
+    generateOnTagCreate: true,
+  });
+  return normalized.kind === "generate" ? normalized.context : null;
 }
 
 function isBusyStatus(status: Doc<"contentDrafts">["status"]): boolean {
@@ -308,7 +325,11 @@ export const enqueueFromEvent = internalMutation({
       trigger: normalized.context.trigger,
       status: "queued",
       tone: "technical",
-      locale: "en",
+      locale: detectContentLocale([
+        normalized.context.title,
+        normalized.context.releaseNotes ?? "",
+        ...normalized.context.commitMessages,
+      ]),
       imageMode: "none",
       imageStatus: "skipped",
       textModel: TEXT_MODEL,
@@ -379,6 +400,7 @@ export const requestGeneration = mutation({
       ? capStrings(args.requestedPalette, 8, 80)
       : draft.requestedPalette;
     const locale = capText(args.locale ?? draft.locale, 20) || "en";
+    const localeLocked = args.locale !== undefined;
     const now = Date.now();
     const priorRuns = await ctx.db
       .query("generationRuns")
@@ -397,6 +419,7 @@ export const requestGeneration = mutation({
     await ctx.db.patch(draft._id, {
       tone: args.tone ?? draft.tone,
       locale,
+      localeLocked,
       imageMode,
       requestedPalette: palette,
       imageStatus:
@@ -593,10 +616,6 @@ export const forceGenerateForRepository = mutation({
 
     const now = Date.now();
     const changeKey = `manual:${args.repository}:${now}`;
-    const defaultTitle = args.title || `Actualización reciente en ${args.repository}`;
-    const commitMessages = args.description
-      ? [args.description]
-      : [`Actualización y mejoras en ${args.repository}`];
 
     // Look for recent event or create a synthetic event
     const event = await ctx.db
@@ -604,6 +623,23 @@ export const forceGenerateForRepository = mutation({
       .filter((q) => q.eq(q.field("repository"), args.repository))
       .order("desc")
       .first();
+
+    const fromEvent = contextFromRecentEvent(event);
+    const title =
+      args.title || fromEvent?.title || `Recent update in ${args.repository}`;
+    const commitMessages = args.description
+      ? [args.description]
+      : fromEvent?.commitMessages.length
+        ? fromEvent.commitMessages
+        : [title];
+    const releaseNotes = args.description ?? fromEvent?.releaseNotes;
+    const locale =
+      capText(args.locale ?? "", 20) ||
+      detectContentLocale([
+        title,
+        releaseNotes ?? "",
+        ...commitMessages,
+      ]);
 
     let eventId: Id<"githubEvents">;
     if (!event) {
@@ -614,7 +650,7 @@ export const forceGenerateForRepository = mutation({
         repository: args.repository,
         payload: {
           repository: { full_name: args.repository },
-          commits: [{ message: defaultTitle }],
+          commits: [{ message: title }],
         },
         status: "processing",
         installationId: repo?.installationId,
@@ -630,15 +666,29 @@ export const forceGenerateForRepository = mutation({
       githubEventId: eventId,
       changeKey,
       repository: args.repository,
-      trigger: "push",
-      title: defaultTitle,
+      trigger: fromEvent?.trigger ?? "push",
+      title,
       commitMessages,
-      releaseNotes: args.description,
       createdAt: now,
+      ...(releaseNotes !== undefined ? { releaseNotes } : {}),
+      ...(fromEvent?.beforeSha !== undefined
+        ? { beforeSha: fromEvent.beforeSha }
+        : {}),
+      ...(fromEvent?.afterSha !== undefined
+        ? { afterSha: fromEvent.afterSha }
+        : {}),
+      ...(fromEvent?.ref !== undefined ? { ref: fromEvent.ref } : {}),
+      ...(fromEvent?.tag !== undefined ? { tag: fromEvent.tag } : {}),
+      ...(fromEvent?.prNumber !== undefined
+        ? { prNumber: fromEvent.prNumber }
+        : {}),
+      ...(fromEvent?.compareUrl !== undefined
+        ? { compareUrl: fromEvent.compareUrl }
+        : {}),
     });
 
     const threadId = await createThread(ctx, components.agent, {
-      title: `${args.repository}: ${defaultTitle}`,
+      title: `${args.repository}: ${title}`,
       summary: `Post generation for ${changeKey}`,
     });
 
@@ -647,10 +697,11 @@ export const forceGenerateForRepository = mutation({
       changeContextId: contextId,
       changeKey,
       repository: args.repository,
-      trigger: "push",
+      trigger: fromEvent?.trigger ?? "push",
       status: "queued",
       tone: args.tone ?? "technical",
-      locale: args.locale ?? "es",
+      locale,
+      ...(args.locale !== undefined ? { localeLocked: true } : {}),
       imageMode: "none",
       imageStatus: "skipped",
       textModel: TEXT_MODEL,
@@ -767,6 +818,7 @@ export const getGenerationInput = internalQuery({
       trigger: draft.trigger,
       tone: draft.tone,
       locale: draft.locale,
+      localeLocked: draft.localeLocked === true,
       imageMode: draft.imageMode,
       requestedPalette: draft.requestedPalette,
       title: change.title,
@@ -873,6 +925,7 @@ export const saveChangeEvidence = internalMutation({
     filePaths: v.array(v.string()),
     truncated: v.boolean(),
     evidenceText: v.string(),
+    locale: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -888,6 +941,9 @@ export const saveChangeEvidence = internalMutation({
     });
     await ctx.db.patch(draft._id, {
       status: "analyzing",
+      ...(args.locale && draft.localeLocked !== true
+        ? { locale: capText(args.locale, 20) }
+        : {}),
       updatedAt: Date.now(),
     });
     return null;
@@ -1016,7 +1072,10 @@ export const finishReferenceImage = internalMutation({
 });
 
 export const finishWithoutImage = internalMutation({
-  args: { draftId: v.id("contentDrafts") },
+  args: {
+    draftId: v.id("contentDrafts"),
+    reason: v.optional(v.string()),
+  },
   returns: v.null(),
   handler: async (ctx, args) => {
     const draft = await ctx.db.get(args.draftId);
@@ -1024,8 +1083,9 @@ export const finishWithoutImage = internalMutation({
       throw new Error("Draft not found.");
     }
     await ctx.db.patch(draft._id, {
-      imageStatus: "skipped",
+      imageStatus: args.reason ? "failed" : "skipped",
       status: draft.title ? "ready" : "partial",
+      ...(args.reason ? { error: capText(args.reason, 2_000) } : {}),
       updatedAt: Date.now(),
       completedAt: Date.now(),
     });

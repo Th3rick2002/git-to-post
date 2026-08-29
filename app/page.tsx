@@ -50,7 +50,6 @@ function DashboardContent() {
       setSyncStatus(`Iniciando redacción con IA para ${repoFullName}...`);
       await forceGenerate({
         repository: repoFullName,
-        locale: "es",
         tone: "technical",
       });
       setSyncStatus(`¡Generación en proceso! Redirigiendo a tus borradores...`);
