@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useSession } from "@/lib/auth-client";
+import { ownerTokenFromSession } from "@/lib/sessionOwner";
 
 export default function EventsPage() {
   if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
@@ -25,8 +26,12 @@ export default function EventsPage() {
 
 function EventsFeed() {
   const { data: session, isPending } = useSession();
+  const ownerTokenIdentifier = ownerTokenFromSession(session);
   const isSignedIn = Boolean(session?.user);
-  const events = useQuery(api.githubEvents.list, isSignedIn ? { limit: 20 } : "skip");
+  const events = useQuery(
+    api.githubEvents.list,
+    isSignedIn ? { limit: 20, ownerTokenIdentifier } : "skip",
+  );
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-background p-4 lg:p-8">
@@ -39,9 +44,14 @@ function EventsFeed() {
               Recepción y procesamiento en tiempo real de eventos de GitHub con Convex.
             </p>
           </div>
-          <Link href="/" className="text-sm text-primary transition-colors hover:text-white">
-            Volver al desk
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link href="/drafts" className="text-sm text-primary transition-colors hover:text-white">
+              Borradores IA
+            </Link>
+            <Link href="/" className="text-sm text-primary transition-colors hover:text-white">
+              Volver al desk
+            </Link>
+          </div>
         </header>
 
         <section className="glass-panel space-y-3 rounded-xl p-5">
@@ -84,6 +94,14 @@ function EventsFeed() {
           ) : !isSignedIn ? (
             <div className="rounded-xl border border-dashed border-primary/15 bg-surface/40 p-8 text-center text-on-surface-variant">
               <p>Inicia sesión para ver los eventos de tus repositorios.</p>
+              <div className="mt-4">
+                <Link
+                  href="/login"
+                  className="inline-flex rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950"
+                >
+                  Continuar con GitHub
+                </Link>
+              </div>
             </div>
           ) : !events ? (
             <div className="text-sm text-on-surface-variant">Cargando eventos...</div>

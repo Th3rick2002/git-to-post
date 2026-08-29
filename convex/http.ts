@@ -1,11 +1,23 @@
 import { httpRouter } from "convex/server";
-import { httpAction } from "./_generated/server";
+import { env, httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { authComponent, createAuth } from "./auth";
 
 const http = httpRouter();
 
 authComponent.registerRoutesLazy(http, createAuth);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
 
 /**
  * Verifies HMAC-SHA256 signature from GitHub using Web Crypto API.
@@ -34,7 +46,7 @@ async function verifyGitHubSignature(
   );
   const calculatedSigArray = Array.from(new Uint8Array(calculatedSigBuffer));
   const calculatedSigHex = calculatedSigArray
-    .map((b) => b.toString(16).padStart(2, "0"))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 
   if (signatureHex.length !== calculatedSigHex.length) {
@@ -47,6 +59,49 @@ async function verifyGitHubSignature(
   return result === 0;
 }
 
+function asRepoChange(value: unknown): {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+} | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "number" ||
+    typeof value.name !== "string" ||
+    typeof value.full_name !== "string" ||
+    typeof value.private !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    full_name: value.full_name,
+    private: value.private,
+  };
+}
+
+function asRepoRemoval(value: unknown): {
+  id: number;
+  name: string;
+  full_name: string;
+} | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "number" ||
+    typeof value.name !== "string" ||
+    typeof value.full_name !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    full_name: value.full_name,
+  };
+}
+
 http.route({
   path: "/github-webhook",
   method: "POST",
@@ -55,12 +110,14 @@ http.route({
     const signature = req.headers.get("x-hub-signature-256");
     const event = req.headers.get("x-github-event");
     const deliveryId = req.headers.get("x-github-delivery");
+    const webhookSecret = env.GITHUB_WEBHOOK_SECRET || process.env.GITHUB_WEBHOOK_SECRET;
 
-    const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
-
-    // Verify HMAC-SHA256 signature
     if (webhookSecret) {
-      const isValid = await verifyGitHubSignature(webhookSecret, signature, rawBody);
+      const isValid = await verifyGitHubSignature(
+        webhookSecret,
+        signature,
+        rawBody
+      );
       if (!isValid) {
         return new Response(JSON.stringify({ error: "Invalid signature" }), {
           status: 401,
@@ -72,7 +129,8 @@ http.route({
     if (!deliveryId || !event) {
       return new Response(
         JSON.stringify({
-          error: "Missing required GitHub headers (x-github-delivery or x-github-event)",
+          error:
+            "Missing required GitHub headers (x-github-delivery or x-github-event)",
         }),
         {
           status: 400,
@@ -91,89 +149,104 @@ http.route({
       });
     }
 
-    if (typeof parsedBody !== "object" || parsedBody === null) {
-      return new Response(JSON.stringify({ error: "Payload must be an object" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+    if (!isRecord(parsedBody)) {
+      return new Response(
+        JSON.stringify({ error: "Payload must be an object" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
-    const payload = parsedBody as Record<string, unknown>;
-    const action = typeof payload.action === "string" ? payload.action : undefined;
+    const payload = parsedBody;
+    const action = readString(payload.action);
+    const installation = isRecord(payload.installation)
+      ? payload.installation
+      : undefined;
+    const repository = isRecord(payload.repository)
+      ? payload.repository
+      : undefined;
+    const sender = isRecord(payload.sender) ? payload.sender : undefined;
+    const installationId = readNumber(installation?.id);
+    const githubRepositoryId = readNumber(repository?.id);
+    const repositoryFullName = readString(repository?.full_name);
+    const senderLogin = readString(sender?.login);
 
-    const installationObj =
-      typeof payload.installation === "object" && payload.installation !== null
-        ? (payload.installation as { id?: number })
-        : undefined;
-    const installationId = typeof installationObj?.id === "number" ? installationObj.id : undefined;
-
-    const repositoryObj =
-      typeof payload.repository === "object" && payload.repository !== null
-        ? (payload.repository as { id?: number; full_name?: string })
-        : undefined;
-    const repositoryId = typeof repositoryObj?.id === "number" ? repositoryObj.id : undefined;
-    const repositoryFullName = typeof repositoryObj?.full_name === "string" ? repositoryObj.full_name : undefined;
-
-    const senderObj =
-      typeof payload.sender === "object" && payload.sender !== null
-        ? (payload.sender as { login?: string })
-        : undefined;
-    const senderLogin = typeof senderObj?.login === "string" ? senderObj.login : undefined;
-
-    // Handle Lifecycle Events
     if (event === "installation" && installationId) {
       if (action === "created") {
-        const account =
-          typeof payload.account === "object" && payload.account !== null
-            ? (payload.account as { id?: number; login?: string; type?: string })
-            : undefined;
+        const account = isRecord(payload.account)
+          ? (payload.account as { id?: number; login?: string; type?: string })
+          : undefined;
         const repos = Array.isArray(payload.repositories)
-          ? (payload.repositories as Array<{ id: number; name: string; full_name: string; private: boolean }>)
+          ? payload.repositories.flatMap((item) => {
+              const repo = asRepoChange(item);
+              return repo ? [repo] : [];
+            })
           : [];
-        await ctx.runMutation(internal.githubConnections.handleInstallationCreatedWebhook, {
-          installationId,
-          accountId: account?.id || 0,
-          accountLogin: account?.login || senderLogin || "unknown",
-          accountType: account?.type || "User",
-          repositorySelection:
-            typeof payload.repository_selection === "string"
-              ? payload.repository_selection
-              : "selected",
-          repositories: repos,
-        });
+        await ctx.runMutation(
+          internal.githubConnections.handleInstallationCreatedWebhook,
+          {
+            installationId,
+            accountId: account?.id || 0,
+            accountLogin: account?.login || senderLogin || "unknown",
+            accountType: account?.type || "User",
+            repositorySelection:
+              typeof payload.repository_selection === "string"
+                ? payload.repository_selection
+                : "selected",
+            repositories: repos,
+          }
+        );
       } else if (action === "deleted") {
-        await ctx.runMutation(internal.githubConnections.updateInstallationStatus, {
-          installationId,
-          status: "deleted",
-        });
+        await ctx.runMutation(
+          internal.githubConnections.updateInstallationStatus,
+          {
+            installationId,
+            status: "deleted",
+          }
+        );
       } else if (action === "suspend") {
-        await ctx.runMutation(internal.githubConnections.updateInstallationStatus, {
-          installationId,
-          status: "suspended",
-        });
+        await ctx.runMutation(
+          internal.githubConnections.updateInstallationStatus,
+          {
+            installationId,
+            status: "suspended",
+          }
+        );
       } else if (action === "unsuspend") {
-        await ctx.runMutation(internal.githubConnections.updateInstallationStatus, {
-          installationId,
-          status: "active",
-        });
+        await ctx.runMutation(
+          internal.githubConnections.updateInstallationStatus,
+          {
+            installationId,
+            status: "active",
+          }
+        );
       }
     } else if (event === "installation_repositories" && installationId) {
       const added = Array.isArray(payload.repositories_added)
-        ? (payload.repositories_added as Array<{ id: number; name: string; full_name: string; private: boolean }>)
+        ? payload.repositories_added.flatMap((item) => {
+            const repo = asRepoChange(item);
+            return repo ? [repo] : [];
+          })
         : [];
       const removed = Array.isArray(payload.repositories_removed)
-        ? (payload.repositories_removed as Array<{ id: number; name: string; full_name: string }>)
+        ? payload.repositories_removed.flatMap((item) => {
+            const repo = asRepoRemoval(item);
+            return repo ? [repo] : [];
+          })
         : [];
-
-      await ctx.runMutation(internal.githubConnections.handleInstallationRepositoriesWebhook, {
-        installationId,
-        repositoriesAdded: added,
-        repositoriesRemoved: removed,
-      });
+      await ctx.runMutation(
+        internal.githubConnections.handleInstallationRepositoriesWebhook,
+        {
+          installationId,
+          repositoriesAdded: added,
+          repositoriesRemoved: removed,
+        }
+      );
     }
 
-    // Save and schedule general events (push, pull_request, release, issues, etc.)
-    const eventId = await ctx.runMutation(internal.githubEvents.saveEvent, {
+    const saved = await ctx.runMutation(internal.githubEvents.saveEvent, {
       deliveryId,
       event,
       action,
@@ -181,18 +254,22 @@ http.route({
       sender: senderLogin,
       payload,
       installationId,
-      githubRepositoryId: repositoryId,
+      githubRepositoryId,
     });
 
-    await ctx.scheduler.runAfter(0, internal.githubEvents.processEvent, {
-      eventId,
-    });
+    if (saved.status === "pending" || saved.status === "failed") {
+      await ctx.scheduler.runAfter(0, internal.githubEvents.processEvent, {
+        eventId: saved.eventId,
+      });
+    }
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Webhook received",
-        eventId,
+        message: saved.isNew
+          ? "Webhook received and scheduled for processing"
+          : "Webhook delivery already recorded",
+        eventId: saved.eventId,
         deliveryId,
       }),
       {

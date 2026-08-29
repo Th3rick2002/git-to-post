@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { useSession } from "@/lib/auth-client";
+import { ownerTokenFromSession } from "@/lib/sessionOwner";
 import { hrefFor, readView } from "../workspace/view";
 import { settingsFromDoc, type RepoSettingsValues } from "../workspace/types";
 import { ActivityFeed } from "./activity-feed";
@@ -19,9 +21,13 @@ export function Dashboard({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const ownerTokenIdentifier = ownerTokenFromSession(session);
   const [settingsByRepo, setSettingsByRepo] = useState<Record<number, RepoSettingsValues>>({});
 
-  const repositories = useQuery(api.githubConnections.listRepositories);
+  const repositories = useQuery(api.githubConnections.listRepositories, {
+    ownerTokenIdentifier,
+  });
 
   const repos = repositories ?? [];
   const { selected } = readView(repos, searchParams.get("repo"));

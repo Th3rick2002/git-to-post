@@ -32,7 +32,11 @@ export default function LoginPage() {
         callbackURL: "/onboarding",
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al iniciar sesión con GitHub");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Error al iniciar sesión con GitHub"
+      );
       setLoading(false);
     }
   };

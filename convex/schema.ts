@@ -5,19 +5,19 @@ export const triggerValidator = v.union(
   v.literal("push"),
   v.literal("pull_request"),
   v.literal("release"),
-  v.literal("tag"),
+  v.literal("tag")
 );
 
 export const toneValidator = v.union(
   v.literal("devrel"),
   v.literal("technical"),
-  v.literal("executive"),
+  v.literal("executive")
 );
 
 export const imageModeValidator = v.union(
   v.literal("none"),
   v.literal("reference"),
-  v.literal("abstract"),
+  v.literal("abstract")
 );
 
 export const draftStatusValidator = v.union(
@@ -27,7 +27,7 @@ export const draftStatusValidator = v.union(
   v.literal("generating_image"),
   v.literal("ready"),
   v.literal("partial"),
-  v.literal("failed"),
+  v.literal("failed")
 );
 
 export const imageStatusValidator = v.union(
@@ -36,26 +36,26 @@ export const imageStatusValidator = v.union(
   v.literal("generated"),
   v.literal("attached"),
   v.literal("skipped"),
-  v.literal("failed"),
+  v.literal("failed")
 );
 
 export const runStageValidator = v.union(
   v.literal("text"),
   v.literal("image"),
-  v.literal("all"),
+  v.literal("all")
 );
 
 export const runStatusValidator = v.union(
   v.literal("queued"),
   v.literal("running"),
   v.literal("succeeded"),
-  v.literal("failed"),
+  v.literal("failed")
 );
 
 export const confidenceValidator = v.union(
   v.literal("low"),
   v.literal("medium"),
-  v.literal("high"),
+  v.literal("high")
 );
 
 export const evidenceValidator = v.object({
