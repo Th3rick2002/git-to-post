@@ -257,6 +257,7 @@ export default defineSchema({
     status: draftStatusValidator,
     tone: toneValidator,
     locale: v.string(),
+    localeLocked: v.optional(v.boolean()),
     imageMode: imageModeValidator,
     imageStatus: imageStatusValidator,
     textModel: v.string(),
