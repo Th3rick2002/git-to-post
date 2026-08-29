@@ -134,7 +134,7 @@ function DashboardContent() {
         <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-6">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-white flex items-center gap-2">
-              🚀 PublicaDev
+              PublicaDev
             </h1>
             <p className="text-slate-400 mt-1 text-sm">
               Genera hilos de X, posts de LinkedIn y Changelogs con IA a partir de tus commits y releases.
@@ -146,13 +146,13 @@ function DashboardContent() {
               href="/drafts"
               className="flex items-center gap-1.5 rounded-xl border border-purple-500/30 bg-purple-500/10 px-3.5 py-2 text-xs font-semibold text-purple-300 transition hover:bg-purple-500/20"
             >
-              ✍️ Borradores IA
+              Borradores IA
             </Link>
             <Link
               href="/events"
               className="rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700"
             >
-              📥 Webhooks
+              Webhooks
             </Link>
 
             <div suppressHydrationWarning className="flex items-center gap-3">
@@ -215,7 +215,7 @@ function DashboardContent() {
         <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
             <h2 className="text-lg font-semibold text-white">
-              📦 Repositorios de GitHub & Generación de Contenido
+              Repositorios de GitHub & Generación de Contenido
             </h2>
             <p className="text-sm text-slate-400 max-w-xl">
               Instala la GitHub App para que la IA escuche automáticamente tus pushes, pull requests y releases, generando publicaciones listas para compartir.
@@ -241,7 +241,7 @@ function DashboardContent() {
         {/* Connected Repositories Grid */}
         <section className="space-y-4">
           <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            🔗 Repositorios Conectados
+            Repositorios Conectados
             {repositories && (
               <span className="text-xs bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-normal">
                 {repositories.length}
@@ -296,7 +296,7 @@ function DashboardContent() {
                       disabled={generatingRepo === repo.fullName}
                       className="flex items-center gap-1 rounded-lg border border-purple-500/40 bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-300 transition hover:bg-purple-500/20 disabled:opacity-50 cursor-pointer"
                     >
-                      {generatingRepo === repo.fullName ? "Generando..." : "⚡ Generar con IA"}
+                      {generatingRepo === repo.fullName ? "Generando..." : "Generar con IA"}
                     </button>
                     <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium shrink-0">
                       Activo
@@ -312,7 +312,7 @@ function DashboardContent() {
         <section className="space-y-4 pt-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-              📥 Eventos en Tiempo Real
+              Eventos en Tiempo Real
               {events && (
                 <span className="text-xs bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-normal">
                   {events.length}

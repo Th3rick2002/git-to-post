@@ -56,7 +56,7 @@ function EventsFeed() {
               href="/drafts"
               className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-300 transition hover:bg-purple-500/20"
             >
-              ✍️ Borradores IA
+              Borradores IA
             </Link>
           </div>
         </header>
