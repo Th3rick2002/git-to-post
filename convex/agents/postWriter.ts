@@ -11,8 +11,8 @@ import { generatedDraftValidator } from "../schema";
 const evidenceSchema = z.object({
   claim: z.string().max(500),
   source: z.string().max(500),
-  file: z.string().max(400).optional(),
-  lines: z.string().max(80).optional(),
+  file: z.string().max(400).nullable().default(null),
+  lines: z.string().max(80).nullable().default(null),
 });
 
 const metricSchema = z.object({
@@ -26,11 +26,11 @@ const changeAnalysisSchema = z.object({
   before: z.string().max(1_500),
   after: z.string().max(1_500),
   impact: z.string().max(1_500),
-  architectureNotes: z.string().max(1_500),
-  apiChanges: z.string().max(1_500),
-  unknowns: z.array(z.string().max(400)).max(12),
-  evidence: z.array(evidenceSchema).max(12),
-  metrics: z.array(metricSchema).max(8),
+  architectureNotes: z.string().max(1_500).nullable().default(null),
+  apiChanges: z.string().max(1_500).nullable().default(null),
+  unknowns: z.array(z.string().max(400)).max(12).default([]),
+  evidence: z.array(evidenceSchema).max(12).default([]),
+  metrics: z.array(metricSchema).max(8).default([]),
   confidence: z.enum(["low", "medium", "high"]),
 });
 
@@ -40,14 +40,14 @@ const writtenDraftSchema = z.object({
   xThread: z.array(z.string().max(280)).min(1).max(6),
   linkedinPost: z.string().max(3_000),
   changelogMarkdown: z.string().max(12_000),
-  technicalHighlights: z.array(z.string().max(600)).max(12),
-  breakingChanges: z.array(z.string().max(600)).max(8),
-  hashtags: z.array(z.string().max(60)).max(8),
+  technicalHighlights: z.array(z.string().max(600)).max(12).default([]),
+  breakingChanges: z.array(z.string().max(600)).max(8).default([]),
+  hashtags: z.array(z.string().max(60)).max(8).default([]),
   visualBrief: z.object({
     subject: z.string().max(600),
     mood: z.string().max(300),
     palette: z.array(z.string().max(80)).min(2).max(8),
-    avoid: z.array(z.string().max(120)).max(12),
+    avoid: z.array(z.string().max(120)).max(12).default([]),
   }),
 });
 
@@ -70,18 +70,19 @@ Rules:
 - The visual brief is for an abstract editorial image: no logos, no product names, no text, no UI, no icons, and no watermark.`;
 
 function createWriter() {
-  if (!env.OPENROUTER_API_KEY) {
+  const apiKey = env.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
     throw new Error(
       "OPENROUTER_API_KEY is not configured in the Convex deployment.",
     );
   }
   const openRouter = createOpenRouter({
-    apiKey: env.OPENROUTER_API_KEY,
-    compatibility: "strict",
+    apiKey,
+    compatibility: "compatible",
     ...(env.OPENROUTER_APP_NAME ? { appName: env.OPENROUTER_APP_NAME } : {}),
     ...(env.OPENROUTER_SITE_URL ? { appUrl: env.OPENROUTER_SITE_URL } : {}),
   });
-  const modelId = env.OPENROUTER_TEXT_MODEL ?? "google/gemini-2.5-flash";
+  const modelId = env.OPENROUTER_TEXT_MODEL ?? process.env.OPENROUTER_TEXT_MODEL ?? "openai/gpt-5.6-luna";
   return new Agent(components.agent, {
     name: "PublicaDev post writer",
     instructions,
@@ -115,7 +116,29 @@ ${args.prompt}`,
       },
     );
 
-    const analysis = analysisResult.object;
+    const rawAnalysis = analysisResult.object;
+    const analysis = {
+      category: rawAnalysis.category,
+      before: rawAnalysis.before,
+      after: rawAnalysis.after,
+      impact: rawAnalysis.impact,
+      architectureNotes: rawAnalysis.architectureNotes || undefined,
+      apiChanges: rawAnalysis.apiChanges || undefined,
+      unknowns: rawAnalysis.unknowns?.length ? rawAnalysis.unknowns : undefined,
+      evidence: (rawAnalysis.evidence || []).map((e) => ({
+        claim: e.claim,
+        source: e.source,
+        file: e.file || undefined,
+        lines: e.lines || undefined,
+      })),
+      metrics: (rawAnalysis.metrics || []).map((m) => ({
+        label: m.label,
+        value: m.value,
+        source: m.source,
+      })),
+      confidence: rawAnalysis.confidence,
+    };
+
     const draftResult = await writer.generateObject(
       ctx,
       { threadId: args.threadId, userId: args.userId },
@@ -131,9 +154,24 @@ ${args.prompt}`,
       },
     );
 
+    const draft = draftResult.object;
+
     return {
       analysis,
-      ...draftResult.object,
+      title: draft.title,
+      summary: draft.summary,
+      xThread: draft.xThread,
+      linkedinPost: draft.linkedinPost,
+      changelogMarkdown: draft.changelogMarkdown,
+      technicalHighlights: draft.technicalHighlights || [],
+      breakingChanges: draft.breakingChanges || [],
+      hashtags: draft.hashtags || [],
+      visualBrief: {
+        subject: draft.visualBrief.subject,
+        mood: draft.visualBrief.mood,
+        palette: draft.visualBrief.palette,
+        avoid: draft.visualBrief.avoid || [],
+      },
     };
   },
 });

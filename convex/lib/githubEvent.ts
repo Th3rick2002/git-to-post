@@ -7,9 +7,9 @@ export type GenerationPolicy = {
 };
 
 export const DEFAULT_GENERATION_POLICY: GenerationPolicy = {
-  generateOnPush: false,
+  generateOnPush: true,
   generateOnVersionTag: true,
-  generateOnTagCreate: false,
+  generateOnTagCreate: true,
 };
 
 export type NormalizedGenerationContext = {
@@ -167,13 +167,17 @@ function normalizePullRequest(
   repository: string,
 ): NormalizedEventResult {
   const pullRequest = readRecord(payload.pull_request);
-  if (input.action !== "closed" || pullRequest?.merged !== true) {
+  if (!pullRequest) {
+    return { kind: "skip", reason: "Pull request object not found in payload." };
+  }
+
+  if (input.action === "closed" && pullRequest.merged !== true) {
     return { kind: "skip", reason: "Pull request was not merged." };
   }
 
   const number = readNumber(payload.number) ?? readNumber(pullRequest.number);
   if (number === undefined) {
-    return { kind: "skip", reason: "Merged pull request did not include a number." };
+    return { kind: "skip", reason: "Pull request did not include a number." };
   }
 
   const base = readRecord(pullRequest.base);
@@ -181,7 +185,8 @@ function normalizePullRequest(
   const baseSha = readString(base?.sha);
   const headSha = readString(head?.sha);
   const mergeSha = readString(pullRequest.merge_commit_sha) ?? headSha ?? input.deliveryId;
-  const title = readString(pullRequest.title) ?? `Merged pull request #${number}`;
+  const isMerged = pullRequest.merged === true;
+  const title = readString(pullRequest.title) ?? (isMerged ? `Merged pull request #${number}` : `Pull request #${number}`);
   const body = readString(pullRequest.body);
 
   return {
@@ -198,7 +203,7 @@ function normalizePullRequest(
       releaseNotes: body?.slice(0, 10_000),
       compareUrl:
         baseSha && headSha
-          ? `https://api.github.com/repos/${repository}/compare/${baseSha}...${headSha}`
+          ? `https://github.com/${repository}/compare/${baseSha}...${headSha}`
           : undefined,
     },
   };
