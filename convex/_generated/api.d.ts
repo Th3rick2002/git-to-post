@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as githubEvents from "../githubEvents.js";
+import type * as http from "../http.js";
 import type * as tasks from "../tasks.js";
 
 import type {
@@ -17,6 +19,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  githubEvents: typeof githubEvents;
+  http: typeof http;
   tasks: typeof tasks;
 }>;
 
