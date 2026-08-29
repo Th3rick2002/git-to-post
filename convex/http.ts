@@ -8,16 +8,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function readNestedString(
-  value: unknown,
-  parent: string,
-  property: string,
-): string | undefined {
-  if (!isRecord(value) || !isRecord(value[parent])) {
-    return undefined;
-  }
-  const nested = value[parent][property];
-  return typeof nested === "string" ? nested : undefined;
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 /**
@@ -26,7 +22,7 @@ function readNestedString(
 async function verifyGitHubSignature(
   secret: string,
   signatureHeader: string | null,
-  rawBody: string
+  rawBody: string,
 ): Promise<boolean> {
   if (!signatureHeader || !signatureHeader.startsWith("sha256=")) {
     return false;
@@ -38,19 +34,18 @@ async function verifyGitHubSignature(
     encoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
   const calculatedSigBuffer = await crypto.subtle.sign(
     "HMAC",
     key,
-    encoder.encode(rawBody)
+    encoder.encode(rawBody),
   );
   const calculatedSigArray = Array.from(new Uint8Array(calculatedSigBuffer));
   const calculatedSigHex = calculatedSigArray
-    .map((b) => b.toString(16).padStart(2, "0"))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 
-  // Constant-time comparison to prevent timing attacks
   if (signatureHex.length !== calculatedSigHex.length) {
     return false;
   }
@@ -61,6 +56,49 @@ async function verifyGitHubSignature(
   return result === 0;
 }
 
+function asRepoChange(value: unknown): {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+} | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "number" ||
+    typeof value.name !== "string" ||
+    typeof value.full_name !== "string" ||
+    typeof value.private !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    full_name: value.full_name,
+    private: value.private,
+  };
+}
+
+function asRepoRemoval(value: unknown): {
+  id: number;
+  name: string;
+  full_name: string;
+} | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "number" ||
+    typeof value.name !== "string" ||
+    typeof value.full_name !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    full_name: value.full_name,
+  };
+}
+
 http.route({
   path: "/github-webhook",
   method: "POST",
@@ -69,12 +107,14 @@ http.route({
     const signature = req.headers.get("x-hub-signature-256");
     const event = req.headers.get("x-github-event");
     const deliveryId = req.headers.get("x-github-delivery");
-
     const webhookSecret = env.GITHUB_WEBHOOK_SECRET;
 
-    // If a secret is set in Convex environment variables, verify the signature
     if (webhookSecret) {
-      const isValid = await verifyGitHubSignature(webhookSecret, signature, rawBody);
+      const isValid = await verifyGitHubSignature(
+        webhookSecret,
+        signature,
+        rawBody,
+      );
       if (!isValid) {
         return new Response(JSON.stringify({ error: "Invalid signature" }), {
           status: 401,
@@ -85,11 +125,14 @@ http.route({
 
     if (!deliveryId || !event) {
       return new Response(
-        JSON.stringify({ error: "Missing required GitHub headers (x-github-delivery or x-github-event)" }),
+        JSON.stringify({
+          error:
+            "Missing required GitHub headers (x-github-delivery or x-github-event)",
+        }),
         {
           status: 400,
           headers: { "Content-Type": "application/json" },
-        }
+        },
       );
     }
 
@@ -102,19 +145,78 @@ http.route({
         headers: { "Content-Type": "application/json" },
       });
     }
+    if (!isRecord(payload)) {
+      return new Response(
+        JSON.stringify({ error: "Payload must be an object" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
-    const action =
-      isRecord(payload) && typeof payload.action === "string"
-        ? payload.action
-        : undefined;
+    const action = readString(payload.action);
+    const installation = isRecord(payload.installation)
+      ? payload.installation
+      : undefined;
+    const repository = isRecord(payload.repository)
+      ? payload.repository
+      : undefined;
+    const sender = isRecord(payload.sender) ? payload.sender : undefined;
+    const installationId = readNumber(installation?.id);
+    const githubRepositoryId = readNumber(repository?.id);
+    const repositoryFullName = readString(repository?.full_name);
+    const senderLogin = readString(sender?.login);
+
+    if (event === "installation" && installationId) {
+      if (action === "deleted") {
+        await ctx.runMutation(internal.githubConnections.updateInstallationStatus, {
+          installationId,
+          status: "deleted",
+        });
+      } else if (action === "suspend") {
+        await ctx.runMutation(internal.githubConnections.updateInstallationStatus, {
+          installationId,
+          status: "suspended",
+        });
+      } else if (action === "unsuspend") {
+        await ctx.runMutation(internal.githubConnections.updateInstallationStatus, {
+          installationId,
+          status: "active",
+        });
+      }
+    } else if (event === "installation_repositories" && installationId) {
+      const added = Array.isArray(payload.repositories_added)
+        ? payload.repositories_added.flatMap((item) => {
+            const repo = asRepoChange(item);
+            return repo ? [repo] : [];
+          })
+        : [];
+      const removed = Array.isArray(payload.repositories_removed)
+        ? payload.repositories_removed.flatMap((item) => {
+            const repo = asRepoRemoval(item);
+            return repo ? [repo] : [];
+          })
+        : [];
+      await ctx.runMutation(
+        internal.githubConnections.handleInstallationRepositoriesWebhook,
+        {
+          installationId,
+          repositoriesAdded: added,
+          repositoriesRemoved: removed,
+        },
+      );
+    }
 
     const saved = await ctx.runMutation(internal.githubEvents.saveEvent, {
       deliveryId,
       event,
       action,
-      repository: readNestedString(payload, "repository", "full_name"),
-      sender: readNestedString(payload, "sender", "login"),
+      repository: repositoryFullName,
+      sender: senderLogin,
       payload,
+      installationId,
+      githubRepositoryId,
     });
 
     if (saved.status === "pending" || saved.status === "failed") {
@@ -135,7 +237,7 @@ http.route({
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
-      }
+      },
     );
   }),
 });
