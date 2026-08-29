@@ -72,9 +72,11 @@ export default function DraftsPage() {
 function DraftWorkspace() {
   const { data: session, isPending } = useSession();
   const ownerTokenIdentifier = ownerTokenFromSession(session);
+  const isSignedIn = Boolean(session?.user);
+
   const drafts = useQuery(
     api.postGeneration.list,
-    ownerTokenIdentifier ? { limit: 30, ownerTokenIdentifier } : "skip",
+    isSignedIn ? { limit: 30, ownerTokenIdentifier } : "skip",
   );
   const [selectedId, setSelectedId] = useState<Id<"contentDrafts"> | null>(null);
 
@@ -84,22 +86,22 @@ function DraftWorkspace() {
       : drafts?.[0]?._id;
   const detail = useQuery(
     api.postGeneration.get,
-    activeId && ownerTokenIdentifier
+    activeId && isSignedIn
       ? { draftId: activeId, ownerTokenIdentifier }
       : "skip",
   );
 
-  if (!isPending && !ownerTokenIdentifier) {
+  if (!isPending && !isSignedIn) {
     return (
-      <main className="grid min-h-screen place-items-center bg-background p-6">
-        <div className="glass-elevated max-w-lg rounded-3xl p-8 text-center">
-          <h1 className="text-2xl font-semibold">Inicia sesión con GitHub</h1>
-          <p className="mt-3 text-sm text-on-surface-variant">
-            Los borradores se muestran solo para la cuenta que instaló la GitHub App.
+      <main className="grid min-h-screen place-items-center bg-slate-950 p-6 text-slate-100">
+        <div className="max-w-lg rounded-3xl border border-slate-800 bg-slate-900 p-8 text-center shadow-xl">
+          <h1 className="text-2xl font-bold text-white">Inicia sesión con GitHub</h1>
+          <p className="mt-3 text-sm text-slate-400">
+            Los borradores de IA se muestran para tu cuenta de GitHub conectada.
           </p>
           <Link
             href="/login"
-            className="mt-6 inline-flex rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-on-primary"
+            className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
           >
             Continuar con GitHub
           </Link>

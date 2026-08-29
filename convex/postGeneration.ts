@@ -15,6 +15,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
+import { getGithubUserId } from "./lib/githubIdentity";
 import { ownerFromIdentity } from "./lib/owner";
 import {
   DEFAULT_GENERATION_POLICY,
@@ -319,6 +320,9 @@ export const enqueueFromEvent = internalMutation({
       ...(event.ownerTokenIdentifier !== undefined
         ? { ownerTokenIdentifier: event.ownerTokenIdentifier }
         : {}),
+      ...(event.ownerGithubUserId !== undefined
+        ? { ownerGithubUserId: event.ownerGithubUserId }
+        : {}),
     });
     const runId = await ctx.db.insert("generationRuns", {
       draftId,
@@ -484,12 +488,28 @@ export const list = query({
   },
   returns: v.array(draftViewValidator),
   handler: async (ctx, args) => {
+    const ownerGithubUserId = await getGithubUserId(ctx);
+    const limit = Math.max(1, Math.min(50, Math.floor(args.limit ?? 30)));
+
+    if (ownerGithubUserId !== null) {
+      const userDrafts = await ctx.db
+        .query("contentDrafts")
+        .withIndex("by_owner_github_user_id_and_updated_at", (q) =>
+          q.eq("ownerGithubUserId", ownerGithubUserId)
+        )
+        .order("desc")
+        .take(limit);
+
+      if (userDrafts.length > 0) {
+        return await Promise.all(userDrafts.map((draft) => toDraftView(ctx, draft)));
+      }
+    }
+
     const identity = await ctx.auth.getUserIdentity();
     const owner = ownerFromIdentity(identity, args.ownerTokenIdentifier);
     if (!owner) {
       return [];
     }
-    const limit = Math.max(1, Math.min(50, Math.floor(args.limit ?? 20)));
     const drafts = await ctx.db
       .query("contentDrafts")
       .withIndex("by_owner_and_updated_at", (q) =>
@@ -514,15 +534,25 @@ export const get = query({
     }),
   ),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const owner = ownerFromIdentity(identity, args.ownerTokenIdentifier);
-    if (!owner) {
-      return null;
-    }
+    const ownerGithubUserId = await getGithubUserId(ctx);
     const draft = await ctx.db.get(args.draftId);
-    if (!draft || draft.ownerTokenIdentifier !== owner) {
+    if (!draft) return null;
+
+    let isAuthorized = false;
+    if (ownerGithubUserId !== null && draft.ownerGithubUserId === ownerGithubUserId) {
+      isAuthorized = true;
+    } else {
+      const identity = await ctx.auth.getUserIdentity();
+      const owner = ownerFromIdentity(identity, args.ownerTokenIdentifier);
+      if (owner && draft.ownerTokenIdentifier === owner) {
+        isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
       return null;
     }
+
     const references = await ctx.db
       .query("imageReferences")
       .withIndex("by_draft_id", (q) => q.eq("draftId", draft._id))
@@ -539,6 +569,124 @@ export const get = query({
         })),
       ),
     };
+  },
+});
+
+export const forceGenerateForRepository = mutation({
+  args: {
+    repository: v.string(),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
+    tone: v.optional(toneValidator),
+    locale: v.optional(v.string()),
+  },
+  returns: v.id("contentDrafts"),
+  handler: async (ctx, args) => {
+    const ownerGithubUserId = await getGithubUserId(ctx);
+    const identity = await ctx.auth.getUserIdentity();
+    const owner = identity?.tokenIdentifier;
+
+    const repo = await ctx.db
+      .query("githubRepositories")
+      .withIndex("by_full_name", (q) => q.eq("fullName", args.repository))
+      .first();
+
+    const now = Date.now();
+    const changeKey = `manual:${args.repository}:${now}`;
+    const defaultTitle = args.title || `Actualización reciente en ${args.repository}`;
+    const commitMessages = args.description
+      ? [args.description]
+      : [`Actualización y mejoras en ${args.repository}`];
+
+    // Look for recent event or create a synthetic event
+    const event = await ctx.db
+      .query("githubEvents")
+      .filter((q) => q.eq(q.field("repository"), args.repository))
+      .order("desc")
+      .first();
+
+    let eventId: Id<"githubEvents">;
+    if (!event) {
+      eventId = await ctx.db.insert("githubEvents", {
+        deliveryId: `manual-${now}`,
+        event: "push",
+        action: "manual_sync",
+        repository: args.repository,
+        payload: {
+          repository: { full_name: args.repository },
+          commits: [{ message: defaultTitle }],
+        },
+        status: "processing",
+        installationId: repo?.installationId,
+        githubRepositoryId: repo?.githubRepositoryId,
+        ownerTokenIdentifier: owner,
+        ownerGithubUserId: ownerGithubUserId ?? repo?.ownerGithubUserId,
+      });
+    } else {
+      eventId = event._id;
+    }
+
+    const contextId = await ctx.db.insert("changeContexts", {
+      githubEventId: eventId,
+      changeKey,
+      repository: args.repository,
+      trigger: "push",
+      title: defaultTitle,
+      commitMessages,
+      releaseNotes: args.description,
+      createdAt: now,
+    });
+
+    const threadId = await createThread(ctx, components.agent, {
+      title: `${args.repository}: ${defaultTitle}`,
+      summary: `Post generation for ${changeKey}`,
+    });
+
+    const draftId = await ctx.db.insert("contentDrafts", {
+      githubEventId: eventId,
+      changeContextId: contextId,
+      changeKey,
+      repository: args.repository,
+      trigger: "push",
+      status: "queued",
+      tone: args.tone ?? "technical",
+      locale: args.locale ?? "es",
+      imageMode: "none",
+      imageStatus: "skipped",
+      textModel: TEXT_MODEL,
+      imageModel: IMAGE_MODEL,
+      promptVersion: PROMPT_VERSION,
+      agentThreadId: threadId,
+      createdAt: now,
+      updatedAt: now,
+      ownerTokenIdentifier: owner,
+      ...(ownerGithubUserId !== null ? { ownerGithubUserId } : {}),
+    });
+
+    const runId = await ctx.db.insert("generationRuns", {
+      draftId,
+      stage: "text",
+      status: "queued",
+      model: TEXT_MODEL,
+      promptVersion: PROMPT_VERSION,
+      attempt: 1,
+      startedAt: now,
+    });
+
+    const workflowId = await startGenerationWorkflow(
+      ctx,
+      draftId,
+      runId,
+      "text"
+    );
+
+    await Promise.all([
+      ctx.db.patch(draftId, { workflowId }),
+      ctx.db.patch(runId, { workflowId }),
+      ctx.db.patch(eventId, { draftId, status: "processing" }),
+    ]);
+
+    return draftId;
   },
 });
 

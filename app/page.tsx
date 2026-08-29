@@ -18,10 +18,15 @@ function DashboardContent() {
 
   const isSignedIn = Boolean(session?.user);
 
+  const [generatingRepo, setGeneratingRepo] = useState<string | null>(null);
+
   const beginInstallation = useMutation(api.githubConnections.beginInstallation);
   const completeInstallation = useAction(api.githubConnections.completeInstallation);
   const claimInstallations = useMutation(
     api.githubConnections.claimInstallationsForCurrentUser
+  );
+  const forceGenerate = useMutation(
+    api.postGeneration.forceGenerateForRepository
   );
 
   const repositories = useQuery(
@@ -37,6 +42,30 @@ function DashboardContent() {
     if (!isSignedIn) return;
     claimInstallations().catch(() => {});
   }, [isSignedIn, claimInstallations]);
+
+  const handleForceGenerate = async (repoFullName: string) => {
+    try {
+      setGeneratingRepo(repoFullName);
+      setErrorMessage(null);
+      setSyncStatus(`Iniciando redacción con IA para ${repoFullName}...`);
+      await forceGenerate({
+        repository: repoFullName,
+        locale: "es",
+        tone: "technical",
+      });
+      setSyncStatus(`¡Generación en proceso! Redirigiendo a tus borradores...`);
+      setTimeout(() => {
+        router.push("/drafts");
+      }, 1000);
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Error al iniciar la generación de contenido con IA."
+      );
+      setSyncStatus(null);
+    } finally {
+      setGeneratingRepo(null);
+    }
+  };
 
   const processInstallationCallback = useCallback(
     async (installationId: number, state: string, code?: string) => {
@@ -262,9 +291,18 @@ function DashboardContent() {
                     </div>
                   </div>
 
-                  <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium shrink-0">
-                    Activo
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleForceGenerate(repo.fullName)}
+                      disabled={generatingRepo === repo.fullName}
+                      className="flex items-center gap-1 rounded-lg border border-purple-500/40 bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-300 transition hover:bg-purple-500/20 disabled:opacity-50 cursor-pointer"
+                    >
+                      {generatingRepo === repo.fullName ? "Generando..." : "⚡ Generar con IA"}
+                    </button>
+                    <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium shrink-0">
+                      Activo
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
