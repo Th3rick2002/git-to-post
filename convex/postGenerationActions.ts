@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { env, internalAction } from "./_generated/server";
+import { detectContentLocale } from "./lib/contentLocale";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -11,6 +12,7 @@ type GenerationInput = {
   trigger: "push" | "pull_request" | "release" | "tag";
   tone: "devrel" | "technical" | "executive";
   locale: string;
+  localeLocked: boolean;
   imageMode: "none" | "reference" | "abstract";
   requestedPalette?: string[];
   title: string;
@@ -262,6 +264,29 @@ function parseDataUrl(value: string): { mediaType: string; base64: string } | nu
   return match ? { mediaType: match[1], base64: match[2] } : null;
 }
 
+const IMAGE_MODEL_FALLBACKS = [
+  "google/gemini-2.5-flash-image",
+  "black-forest-labs/flux.2-flex",
+];
+
+function imageModelsToTry(configured: string | undefined): string[] {
+  const ordered = configured
+    ? [configured, ...IMAGE_MODEL_FALLBACKS]
+    : IMAGE_MODEL_FALLBACKS;
+  return [...new Set(ordered)];
+}
+
+function isImagePolicyError(status: number, body: string): boolean {
+  if (status !== 401 && status !== 403) {
+    return false;
+  }
+  return /age.?18|age_18plus|attestation|preferences/i.test(body);
+}
+
+function isRetryableImageStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
 export const collectEvidence = internalAction({
   args: { draftId: v.id("contentDrafts") },
   returns: v.object({ threadId: v.string(), prompt: v.string() }),
@@ -302,18 +327,27 @@ export const collectEvidence = internalAction({
       .join("\n\n")
       .slice(0, 110_000);
 
+    const paletteInstruction = input.requestedPalette?.length
+      ? `Preferred abstract-image palette: ${input.requestedPalette.join(", ")}.`
+      : "Choose an abstract-image palette that matches the change.";
+    const detectedLocale = detectContentLocale([
+      input.title,
+      input.releaseNotes ?? "",
+      ...input.commitMessages,
+      ...detailedEvidence.lines.filter((line) => line.startsWith("COMMIT ")),
+    ]);
+    const locale = input.localeLocked ? input.locale : detectedLocale;
     await ctx.runMutation(internal.postGeneration.saveChangeEvidence, {
       draftId: args.draftId,
       fileStats: summarized.stats,
       filePaths: summarized.filePaths,
       truncated: summarized.truncated,
       evidenceText: payloadEvidence,
+      locale,
     });
+    const prompt = `Create a complete post draft in ${locale} with tone "${input.tone}".
 
-    const paletteInstruction = input.requestedPalette?.length
-      ? `Preferred abstract-image palette: ${input.requestedPalette.join(", ")}.`
-      : "Choose an abstract-image palette that matches the change.";
-    const prompt = `Create a complete post draft in locale "${input.locale}" with tone "${input.tone}".
+Write title, summary, X thread, LinkedIn post, changelog, technical highlights, breaking changes, and hashtags in ${locale}. That is the language of the repository evidence (commit messages, titles, release notes). Do not translate into English unless the evidence itself is English.
 
 Tone meanings:
 - devrel: energetic and launch-oriented, while remaining factual.
@@ -332,10 +366,17 @@ ${payloadEvidence}
 
 export const generateImage = internalAction({
   args: { draftId: v.id("contentDrafts"), prompt: v.string() },
-  returns: v.object({
-    storageId: v.id("_storage"),
-    mediaType: v.string(),
-  }),
+  returns: v.union(
+    v.object({
+      status: v.literal("generated"),
+      storageId: v.id("_storage"),
+      mediaType: v.string(),
+    }),
+    v.object({
+      status: v.literal("skipped"),
+      reason: v.string(),
+    }),
+  ),
   handler: async (ctx, args) => {
     if (!env.OPENROUTER_API_KEY) {
       throw new Error(
@@ -364,54 +405,81 @@ export const generateImage = internalAction({
       });
     }
 
-    const response = await fetch("https://openrouter.ai/api/v1/images", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-        ...(env.OPENROUTER_APP_NAME
-          ? { "X-OpenRouter-Title": env.OPENROUTER_APP_NAME }
-          : {}),
-        ...(env.OPENROUTER_SITE_URL
-          ? { "HTTP-Referer": env.OPENROUTER_SITE_URL }
-          : {}),
-      },
-      body: JSON.stringify({
-        model: env.OPENROUTER_IMAGE_MODEL ?? "meta/muse-image",
-        prompt: args.prompt.slice(0, 4_000),
-        n: 1,
-        aspect_ratio: "1:1",
-        output_format: "png",
-        ...(inputReferences.length > 0
-          ? { input_references: inputReferences.slice(0, 2) }
-          : {}),
-      }),
-    });
-    if (!response.ok) {
-      const details = (await response.text()).slice(0, 1_500);
-      throw new Error(
-        `OpenRouter image generation failed (${response.status}): ${details}`,
+    const headers = {
+      Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json",
+      ...(env.OPENROUTER_APP_NAME
+        ? { "X-OpenRouter-Title": env.OPENROUTER_APP_NAME }
+        : {}),
+      ...(env.OPENROUTER_SITE_URL
+        ? { "HTTP-Referer": env.OPENROUTER_SITE_URL }
+        : {}),
+    };
+    const models = imageModelsToTry(env.OPENROUTER_IMAGE_MODEL);
+    let lastPolicyReason: string | undefined;
+    let lastRetryableError: string | undefined;
+
+    for (const model of models) {
+      const response = await fetch("https://openrouter.ai/api/v1/images", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          prompt: args.prompt.slice(0, 4_000),
+          n: 1,
+          aspect_ratio: "1:1",
+          output_format: "png",
+          ...(inputReferences.length > 0
+            ? { input_references: inputReferences.slice(0, 2) }
+            : {}),
+        }),
+      });
+      if (!response.ok) {
+        const details = (await response.text()).slice(0, 1_500);
+        if (isImagePolicyError(response.status, details)) {
+          lastPolicyReason =
+            "OpenRouter blocked this image model until 18+ age confirmation is completed at https://openrouter.ai/settings/preferences.";
+          continue;
+        }
+        if (isRetryableImageStatus(response.status)) {
+          lastRetryableError = `OpenRouter image generation failed (${response.status}): ${details}`;
+          continue;
+        }
+        lastPolicyReason = `OpenRouter image generation failed (${response.status}): ${details}`;
+        continue;
+      }
+      const payload: unknown = await response.json();
+      const data = safeJson(payload)?.data;
+      const first = Array.isArray(data) ? safeJson(data[0]) : null;
+      const rawBase64 = readString(first?.b64_json);
+      const parsed = rawBase64 ? parseDataUrl(rawBase64) : null;
+      const mediaType =
+        parsed?.mediaType ?? readString(first?.media_type) ?? "image/png";
+      const base64 = parsed?.base64 ?? rawBase64;
+      if (!base64 || !new Set(["image/png", "image/jpeg", "image/webp"]).has(mediaType)) {
+        lastRetryableError = "OpenRouter did not return a supported base64 image.";
+        continue;
+      }
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      const storageId = await ctx.storage.store(
+        new Blob([bytes], { type: mediaType }),
       );
+      return { status: "generated" as const, storageId, mediaType };
     }
-    const payload: unknown = await response.json();
-    const data = safeJson(payload)?.data;
-    const first = Array.isArray(data) ? safeJson(data[0]) : null;
-    const rawBase64 = readString(first?.b64_json);
-    const parsed = rawBase64 ? parseDataUrl(rawBase64) : null;
-    const mediaType =
-      parsed?.mediaType ?? readString(first?.media_type) ?? "image/png";
-    const base64 = parsed?.base64 ?? rawBase64;
-    if (!base64 || !new Set(["image/png", "image/jpeg", "image/webp"]).has(mediaType)) {
-      throw new Error("OpenRouter did not return a supported base64 image.");
+
+    if (lastRetryableError) {
+      throw new Error(lastRetryableError);
     }
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-    const storageId = await ctx.storage.store(
-      new Blob([bytes], { type: mediaType }),
-    );
-    return { storageId, mediaType };
+    return {
+      status: "skipped" as const,
+      reason:
+        lastPolicyReason ??
+        lastRetryableError ??
+        "OpenRouter image generation failed for every configured model.",
+    };
   },
 });
