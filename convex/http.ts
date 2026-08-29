@@ -119,7 +119,26 @@ http.route({
 
     // Handle Lifecycle Events
     if (event === "installation" && installationId) {
-      if (action === "deleted") {
+      if (action === "created") {
+        const account =
+          typeof payload.account === "object" && payload.account !== null
+            ? (payload.account as { id?: number; login?: string; type?: string })
+            : undefined;
+        const repos = Array.isArray(payload.repositories)
+          ? (payload.repositories as Array<{ id: number; name: string; full_name: string; private: boolean }>)
+          : [];
+        await ctx.runMutation(internal.githubConnections.handleInstallationCreatedWebhook, {
+          installationId,
+          accountId: account?.id || 0,
+          accountLogin: account?.login || senderLogin || "unknown",
+          accountType: account?.type || "User",
+          repositorySelection:
+            typeof payload.repository_selection === "string"
+              ? payload.repository_selection
+              : "selected",
+          repositories: repos,
+        });
+      } else if (action === "deleted") {
         await ctx.runMutation(internal.githubConnections.updateInstallationStatus, {
           installationId,
           status: "deleted",

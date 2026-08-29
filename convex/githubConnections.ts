@@ -13,7 +13,10 @@ import { importPKCS8, SignJWT } from "jose";
  * Creates a JWT to authenticate as the GitHub App.
  */
 async function createGitHubAppJWT(appId: string, privateKeyPem: string): Promise<string> {
-  const normalizedKey = privateKeyPem.replace(/\\n/g, "\n");
+  let normalizedKey = privateKeyPem.trim();
+  if (normalizedKey.includes("\\n")) {
+    normalizedKey = normalizedKey.replace(/\\n/g, "\n");
+  }
   const privateKey = await importPKCS8(normalizedKey, "RS256");
   const now = Math.floor(Date.now() / 1000);
   return await new SignJWT({})
@@ -491,3 +494,84 @@ export const handleInstallationRepositoriesWebhook = internalMutation({
     }
   },
 });
+
+/**
+ * Internal helper to handle `installation` webhook with action `created`.
+ */
+export const handleInstallationCreatedWebhook = internalMutation({
+  args: {
+    installationId: v.number(),
+    accountId: v.number(),
+    accountLogin: v.string(),
+    accountType: v.string(),
+    repositorySelection: v.string(),
+    repositories: v.array(
+      v.object({
+        id: v.number(),
+        name: v.string(),
+        full_name: v.string(),
+        private: v.boolean(),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    let ownerTokenIdentifier = args.accountLogin;
+    const existing = await ctx.db
+      .query("githubInstallations")
+      .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))
+      .first();
+
+    if (existing) {
+      ownerTokenIdentifier = existing.ownerTokenIdentifier;
+      await ctx.db.patch(existing._id, {
+        accountId: args.accountId,
+        accountLogin: args.accountLogin,
+        accountType: args.accountType,
+        repositorySelection: args.repositorySelection,
+        status: "active",
+        lastSyncedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.insert("githubInstallations", {
+        installationId: args.installationId,
+        ownerTokenIdentifier,
+        accountId: args.accountId,
+        accountLogin: args.accountLogin,
+        accountType: args.accountType,
+        repositorySelection: args.repositorySelection,
+        status: "active",
+        lastSyncedAt: Date.now(),
+      });
+    }
+
+    for (const r of args.repositories) {
+      const existingRepo = await ctx.db
+        .query("githubRepositories")
+        .withIndex("by_github_repo_id", (q) => q.eq("githubRepositoryId", r.id))
+        .first();
+
+      const [owner, name] = r.full_name.split("/");
+
+      if (existingRepo) {
+        await ctx.db.patch(existingRepo._id, {
+          status: "active",
+          installationId: args.installationId,
+          ownerTokenIdentifier,
+        });
+      } else {
+        await ctx.db.insert("githubRepositories", {
+          githubRepositoryId: r.id,
+          installationId: args.installationId,
+          ownerTokenIdentifier,
+          owner: owner || "",
+          name: name || r.name,
+          fullName: r.full_name,
+          isPrivate: r.private,
+          htmlUrl: `https://github.com/${r.full_name}`,
+          status: "active",
+        });
+      }
+    }
+  },
+});
+
