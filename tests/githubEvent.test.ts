@@ -17,17 +17,20 @@ const enabledTagCreatePolicy = {
 
 describe("normalizeGitHubEvent", () => {
   test("skips a branch push when generateOnPush is off", () => {
-    const result = normalizeGitHubEvent({
-      deliveryId: "delivery-push",
-      event: "push",
-      repository: "publicadev/demo",
-      payload: {
-        ref: "refs/heads/main",
-        before: "a".repeat(40),
-        after: "b".repeat(40),
-        commits: [{ message: "Improve diff parser" }],
+    const result = normalizeGitHubEvent(
+      {
+        deliveryId: "delivery-push",
+        event: "push",
+        repository: "publicadev/demo",
+        payload: {
+          ref: "refs/heads/main",
+          before: "a".repeat(40),
+          after: "b".repeat(40),
+          commits: [{ message: "Improve diff parser" }],
+        },
       },
-    });
+      { ...DEFAULT_GENERATION_POLICY, generateOnPush: false },
+    );
     assert.equal(result.kind, "skip");
     if (result.kind === "skip") {
       assert.equal(result.reason, "Branch push generation is disabled.");
@@ -143,12 +146,15 @@ describe("normalizeGitHubEvent", () => {
   });
 
   test("skips tag creation when generateOnTagCreate is off", () => {
-    const result = normalizeGitHubEvent({
-      deliveryId: "delivery-tag-off",
-      event: "create",
-      repository: "publicadev/demo",
-      payload: { ref_type: "tag", ref: "v1.2.0" },
-    });
+    const result = normalizeGitHubEvent(
+      {
+        deliveryId: "delivery-tag-off",
+        event: "create",
+        repository: "publicadev/demo",
+        payload: { ref_type: "tag", ref: "v1.2.0" },
+      },
+      { ...DEFAULT_GENERATION_POLICY, generateOnTagCreate: false },
+    );
     assert.equal(result.kind, "skip");
     if (result.kind === "skip") {
       assert.equal(result.reason, "Tag creation generation is disabled.");
