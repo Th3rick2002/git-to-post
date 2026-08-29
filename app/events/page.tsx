@@ -1,18 +1,20 @@
 "use client";
 
-import { useQuery } from "convex/react";
 import Link from "next/link";
+import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useSession } from "@/lib/auth-client";
 import { ownerTokenFromSession } from "@/lib/sessionOwner";
+import { EventCard } from "../desk/event-card";
 
 export default function EventsPage() {
   if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
     return (
-      <main className="min-h-screen bg-slate-950 p-8 font-sans text-slate-100">
-        <div className="mx-auto max-w-4xl space-y-4">
-          <h1 className="text-3xl font-bold tracking-tight text-white">Git-to-Post Webhooks</h1>
-          <p className="text-slate-400">
+      <main className="relative min-h-screen overflow-hidden bg-background p-4 lg:p-8">
+        <PageGlow />
+        <div className="relative z-10 mx-auto max-w-4xl space-y-4">
+          <h1 className="text-3xl font-bold tracking-tight text-on-surface">Git-to-Post Webhooks</h1>
+          <p className="text-on-surface-variant">
             Convex is not configured. Set NEXT_PUBLIC_CONVEX_URL to load live GitHub events.
           </p>
         </div>
@@ -27,60 +29,47 @@ function EventsFeed() {
   const { data: session, isPending } = useSession();
   const ownerTokenIdentifier = ownerTokenFromSession(session);
   const isSignedIn = Boolean(session?.user);
-
   const events = useQuery(
     api.githubEvents.list,
-    isSignedIn ? { limit: 20, ownerTokenIdentifier } : "skip"
+    isSignedIn ? { limit: 20, ownerTokenIdentifier } : "skip",
   );
 
   return (
-    <main className="min-h-screen bg-slate-950 p-8 font-sans text-slate-100">
-      <div className="mx-auto max-w-4xl space-y-8">
-        <header className="flex items-center justify-between border-b border-slate-800 pb-4">
+    <main className="relative min-h-screen overflow-hidden bg-background p-4 lg:p-8">
+      <PageGlow />
+      <div className="relative z-10 mx-auto max-w-4xl space-y-8">
+        <header className="flex flex-col gap-3 border-b border-primary/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-white">
-              Git-to-Post Webhooks
-            </h1>
-            <p className="mt-1 text-slate-400">
+            <h1 className="text-3xl font-bold tracking-tight text-on-surface">Git-to-Post Webhooks</h1>
+            <p className="mt-1 text-sm text-on-surface-variant">
               Recepción y procesamiento en tiempo real de eventos de GitHub con Convex.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/drafts"
-              className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-300 transition hover:bg-purple-500/20"
-            >
-              ✍️ Borradores IA
+          <div className="flex flex-wrap items-center gap-3">
+            <Link href="/" className="text-sm text-primary transition-colors hover:text-white">
+              Volver al desk
             </Link>
           </div>
         </header>
 
-        <section className="space-y-3 rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-200">
-            Configuración del Webhook en GitHub
-          </h2>
-          <div className="space-y-2 text-sm text-slate-300">
+        <section className="glass-panel space-y-3 rounded-xl p-5">
+          <h2 className="text-lg font-semibold text-on-surface">Configuración del Webhook en GitHub</h2>
+          <div className="space-y-2 text-sm text-on-surface-variant">
             <p>
-              <strong>Payload URL:</strong>
+              <strong className="text-on-surface">Payload URL:</strong>
             </p>
-            <code className="block select-all break-all rounded border border-slate-800 bg-slate-950 p-2.5 font-mono text-xs text-emerald-400">
+            <code className="glass-input block select-all break-all rounded p-2.5 font-mono text-xs text-primary">
               {process.env.NEXT_PUBLIC_CONVEX_SITE_URL
                 ? `${process.env.NEXT_PUBLIC_CONVEX_SITE_URL}/github-webhook`
                 : "https://<tu-deployment>.convex.site/github-webhook"}
             </code>
-            <ul className="list-inside list-disc space-y-1 text-xs text-slate-400">
+            <ul className="list-inside list-disc space-y-1 text-xs">
               <li>
-                <strong>Content type:</strong> application/json
+                <strong className="text-on-surface">Content type:</strong> application/json
               </li>
               <li>
-                <strong>Secret:</strong> (Opcional) Debe coincidir con la variable
-                GITHUB_WEBHOOK_SECRET en Convex
+                <strong className="text-on-surface">Secret:</strong> (Opcional) Debe coincidir con la
+                variable GITHUB_WEBHOOK_SECRET en Convex
               </li>
             </ul>
           </div>
@@ -88,10 +77,10 @@ function EventsFeed() {
 
         <section className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
+            <h2 className="flex items-center gap-2 text-xl font-semibold text-on-surface">
               Eventos Recibidos en Vivo
               {events ? (
-                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
+                <span className="rounded-full bg-surface-variant px-2 py-0.5 text-xs text-on-surface-variant">
                   {events.length}
                 </span>
               ) : null}
@@ -99,9 +88,9 @@ function EventsFeed() {
           </div>
 
           {isPending ? (
-            <div className="text-sm text-slate-500">Cargando eventos...</div>
+            <div className="text-sm text-on-surface-variant">Cargando eventos...</div>
           ) : !isSignedIn ? (
-            <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/50 p-8 text-center text-slate-400">
+            <div className="rounded-xl border border-dashed border-primary/15 bg-surface/40 p-8 text-center text-on-surface-variant">
               <p>Inicia sesión para ver los eventos de tus repositorios.</p>
               <div className="mt-4">
                 <Link
@@ -113,67 +102,38 @@ function EventsFeed() {
               </div>
             </div>
           ) : !events ? (
-            <div className="text-sm text-slate-500">Cargando eventos...</div>
+            <div className="text-sm text-on-surface-variant">Cargando eventos...</div>
           ) : events.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/50 p-8 text-center text-slate-400">
+            <div className="rounded-xl border border-dashed border-primary/15 bg-surface/40 p-8 text-center text-on-surface-variant">
               <p>No se han recibido eventos de GitHub aún.</p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-on-surface-variant/80">
                 Envía un evento desde tu repositorio de GitHub para verlo aquí en tiempo real.
               </p>
             </div>
           ) : (
             <div className="space-y-3">
               {events.map((event) => (
-                <div
-                  key={event._id}
-                  className="rounded-lg border border-slate-800 bg-slate-900 p-4 transition hover:border-slate-700"
-                >
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 font-mono text-xs text-blue-400">
-                        {event.event}
-                      </span>
-                      {event.action ? (
-                        <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
-                          {event.action}
-                        </span>
-                      ) : null}
-                      <span className="font-medium text-slate-200">
-                        {event.repository || "Desconocido"}
-                      </span>
-                    </div>
-
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        event.status === "processed"
-                          ? "border border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                          : event.status === "failed"
-                            ? "border border-rose-500/20 bg-rose-500/10 text-rose-400"
-                            : "border border-amber-500/20 bg-amber-500/10 text-amber-400"
-                      }`}
-                    >
-                      {event.status}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>
-                      Enviado por: <strong>{event.sender || "N/A"}</strong>
-                    </span>
-                    <span>{new Date(event._creationTime).toLocaleString()}</span>
-                  </div>
-
-                  {event.error ? (
-                    <div className="mt-2 rounded border border-rose-900/50 bg-rose-950/40 p-2 text-xs text-rose-300">
-                      Error: {event.error}
-                    </div>
-                  ) : null}
-                </div>
+                <EventCard key={event._id} event={event} />
               ))}
             </div>
           )}
         </section>
       </div>
     </main>
+  );
+}
+
+function PageGlow() {
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed top-[-20%] left-[-10%] h-[50%] w-[50%] rounded-full bg-primary/10 blur-[130px]"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed right-[-10%] bottom-[-20%] h-[45%] w-[45%] rounded-full bg-tertiary/10 blur-[130px]"
+      />
+    </>
   );
 }
