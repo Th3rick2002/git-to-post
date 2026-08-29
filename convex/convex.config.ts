@@ -5,6 +5,8 @@ import { v } from "convex/values";
 
 const app = defineApp({
   env: {
+    GITHUB_APP_ID: v.optional(v.string()),
+    GITHUB_APP_PRIVATE_KEY: v.optional(v.string()),
     GITHUB_TOKEN: v.optional(v.string()),
     GITHUB_WEBHOOK_SECRET: v.optional(v.string()),
     OPENROUTER_API_KEY: v.optional(v.string()),
