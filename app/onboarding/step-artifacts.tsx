@@ -1,55 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { ArrowRight, Check, Code2, FileText, Image as ImageIcon, ScrollText, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Image as ImageIcon, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
-import type { ArtifactConfig } from "./types";
-
-const ARTIFACT_OPTIONS: Array<{
-  key: keyof ArtifactConfig;
-  title: string;
-  description: string;
-  icon: ReactNode;
-  format: string;
-}> = [
-  {
-    key: "releaseNotes",
-    title: "Automated release notes",
-    description: "Structured release highlights, feature breakdown, and migration steps.",
-    icon: <FileText className="h-5 w-5 text-primary" />,
-    format: "Markdown / HTML",
-  },
-  {
-    key: "socialCard",
-    title: "X.com / social announcement cards",
-    description: "Engaging visual snippet and formatted summary for developer community broadcast.",
-    icon: <ImageIcon className="h-5 w-5 text-tertiary" />,
-    format: "PNG + Text Post",
-  },
-  {
-    key: "changelog",
-    title: "Keep-a-Changelog updates",
-    description: "Auto-categorized commits (Added, Changed, Deprecated, Fixed, Security).",
-    icon: <ScrollText className="h-5 w-5 text-primary" />,
-    format: "CHANGELOG.md",
-  },
-  {
-    key: "apiDocs",
-    title: "API reference diffs",
-    description: "Detects exported function signature additions or breaking type changes.",
-    icon: <Code2 className="h-5 w-5 text-primary" />,
-    format: "TypeScript AST",
-  },
-];
 
 export function StepArtifacts({
-  artifacts,
-  onToggleArtifact,
   onContinue,
   onBack,
 }: {
-  artifacts: ArtifactConfig;
-  onToggleArtifact: (key: keyof ArtifactConfig) => void;
   onContinue: () => void;
   onBack: () => void;
 }) {
@@ -63,69 +20,33 @@ export function StepArtifacts({
     >
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-2xl font-bold tracking-tight text-on-surface">Select generated artifacts</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-on-surface">Generated artifacts</h2>
           <span className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/15 px-2.5 py-0.5 text-xs font-medium text-primary">
             <Sparkles className="h-3 w-3" /> Step 2: Output types
           </span>
         </div>
         <p className="mb-6 text-sm leading-relaxed text-on-surface-variant">
-          X.com announcement cards are available now. Other artifact types stay listed so you can see what is
-          coming next.
+          PublicaDev writes X.com announcement cards from your repository activity.
         </p>
 
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {ARTIFACT_OPTIONS.map((opt) => {
-            const isAllowed = opt.key === "socialCard";
-            const isSelected = isAllowed && artifacts.socialCard;
-            return (
-              <button
-                key={opt.key}
-                type="button"
-                disabled={!isAllowed}
-                onClick={() => {
-                  if (!isAllowed) {
-                    return;
-                  }
-                  onToggleArtifact(opt.key);
-                }}
-                className={`glass-panel flex flex-col justify-between rounded-xl border p-4 text-left transition-all duration-200 ${
-                  isAllowed
-                    ? `cursor-pointer ${
-                        isSelected
-                          ? "border-primary/50 bg-surface-highlight/70 shadow-[0_0_20px_color-mix(in_srgb,var(--primary)_12%,transparent)]"
-                          : "border-primary/10 hover:border-primary/25"
-                      }`
-                    : "cursor-not-allowed border-primary/10 opacity-50"
-                }`}
-              >
-                <div>
-                  <div className="mb-2.5 flex items-center justify-between">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/20 bg-primary/15">
-                      {opt.icon}
-                    </div>
-                    {isAllowed ? (
-                      <div
-                        className={`flex h-5 w-5 items-center justify-center rounded border transition-colors ${
-                          isSelected ? "border-primary bg-primary text-on-primary" : "border-primary/30 bg-surface"
-                        }`}
-                      >
-                        {isSelected ? <Check className="h-3.5 w-3.5 stroke-[3]" /> : null}
-                      </div>
-                    ) : (
-                      <span className="rounded-full border border-outline-variant bg-surface-variant px-2 py-0.5 text-[10px] font-medium tracking-wide text-on-surface-variant uppercase">
-                        Coming soon
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="mb-1 text-sm font-semibold text-on-surface">{opt.title}</h3>
-                  <p className="mb-3 text-xs leading-relaxed text-on-surface-variant">{opt.description}</p>
-                </div>
-                <span className="self-start rounded border border-primary/10 bg-background/60 px-2 py-0.5 font-mono text-[10px] font-medium text-primary/80">
-                  {opt.format}
-                </span>
-              </button>
-            );
-          })}
+        <div className="glass-panel flex flex-col justify-between rounded-xl border border-primary/50 bg-surface-highlight/70 p-4 shadow-[0_0_20px_color-mix(in_srgb,var(--primary)_12%,transparent)]">
+          <div>
+            <div className="mb-2.5 flex items-center justify-between">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/20 bg-primary/15">
+                <ImageIcon className="h-5 w-5 text-tertiary" />
+              </div>
+              <div className="flex h-5 w-5 items-center justify-center rounded border border-primary bg-primary text-on-primary">
+                <Check className="h-3.5 w-3.5 stroke-[3]" />
+              </div>
+            </div>
+            <h3 className="mb-1 text-sm font-semibold text-on-surface">X.com / social announcement cards</h3>
+            <p className="mb-3 text-xs leading-relaxed text-on-surface-variant">
+              Engaging visual snippet and formatted summary for developer community broadcast.
+            </p>
+          </div>
+          <span className="self-start rounded border border-primary/10 bg-background/60 px-2 py-0.5 font-mono text-[10px] font-medium text-primary/80">
+            PNG + Text Post
+          </span>
         </div>
       </div>
 

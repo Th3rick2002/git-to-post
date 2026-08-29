@@ -14,7 +14,7 @@ import { StepEnd } from "./step-end";
 import { StepIntegrations } from "./step-integrations";
 import { StepSourceConnect } from "./step-source-connect";
 import { Stepper } from "./stepper";
-import type { ArtifactConfig, IntegrationMethod, OnboardingState, StepId } from "./types";
+import type { OnboardingState, StepId } from "./types";
 
 const INITIAL_STATE: Pick<OnboardingState, "currentStep" | "furthestStep" | "isComplete" | "artifacts" | "integrationMethod"> =
   {
@@ -28,7 +28,7 @@ const INITIAL_STATE: Pick<OnboardingState, "currentStep" | "furthestStep" | "isC
       apiDocs: false,
       execSummary: false,
     },
-    integrationMethod: "grok_bot",
+    integrationMethod: "manual",
   };
 
 export function OnboardingWizard() {
@@ -74,23 +74,6 @@ export function OnboardingWizard() {
     window.setTimeout(() => {
       setNotification(null);
     }, 2800);
-  }
-
-  function handleToggleArtifact(key: keyof ArtifactConfig) {
-    if (key !== "socialCard") {
-      return;
-    }
-    setState((prev) => ({
-      ...prev,
-      artifacts: { ...prev.artifacts, socialCard: !prev.artifacts.socialCard },
-    }));
-  }
-
-  function handleSelectMethod(method: IntegrationMethod) {
-    setState((prev) => ({
-      ...prev,
-      integrationMethod: method,
-    }));
   }
 
   function goToStep(step: StepId) {
@@ -192,8 +175,6 @@ export function OnboardingWizard() {
             {state.currentStep === 2 ? (
               <StepArtifacts
                 key="step-2-artifacts"
-                artifacts={state.artifacts}
-                onToggleArtifact={handleToggleArtifact}
                 onContinue={() => continueToStep(3)}
                 onBack={() => goToStep(1)}
               />
@@ -202,8 +183,6 @@ export function OnboardingWizard() {
             {state.currentStep === 3 ? (
               <StepIntegrations
                 key="step-3-integrations"
-                selectedMethod={state.integrationMethod}
-                onSelectMethod={handleSelectMethod}
                 onContinue={() => continueToStep(4)}
                 onBack={() => goToStep(2)}
               />

@@ -16,11 +16,13 @@ import {
   Upload,
 } from "lucide-react";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useSession } from "@/lib/auth-client";
 import { ownerTokenFromSession } from "@/lib/sessionOwner";
+import { hrefForDraft } from "../workspace/view";
 
 type OutputTab = "x" | "linkedin" | "markdown";
 type ImageMode = "none" | "reference" | "abstract";
@@ -66,11 +68,17 @@ export default function DraftsPage() {
       </main>
     );
   }
-  return <DraftWorkspace />;
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background p-8 text-sm text-on-surface-variant">Cargando...</div>}>
+      <DraftWorkspace />
+    </Suspense>
+  );
 }
 
 function DraftWorkspace() {
   const { data: session, isPending } = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const ownerTokenIdentifier = ownerTokenFromSession(session);
   const isSignedIn = Boolean(session?.user);
 
@@ -78,12 +86,16 @@ function DraftWorkspace() {
     api.postGeneration.list,
     isSignedIn ? { limit: 30, ownerTokenIdentifier } : "skip",
   );
-  const [selectedId, setSelectedId] = useState<Id<"contentDrafts"> | null>(null);
-
+  const requestedId = searchParams.get("draft");
+  const listedMatch = drafts?.find((draft) => draft._id === requestedId)?._id;
   const activeId =
-    selectedId && drafts?.some((draft) => draft._id === selectedId)
-      ? selectedId
-      : drafts?.[0]?._id;
+    listedMatch ??
+    (requestedId ? (requestedId as Id<"contentDrafts">) : undefined) ??
+    drafts?.[0]?._id;
+
+  function selectDraft(draftId: Id<"contentDrafts">) {
+    router.replace(hrefForDraft(draftId));
+  }
   const detail = useQuery(
     api.postGeneration.get,
     activeId && isSignedIn
@@ -131,6 +143,9 @@ function DraftWorkspace() {
             </div>
           </div>
           <nav className="flex items-center gap-2 text-sm">
+            <Link className="rounded-lg px-3 py-2 text-on-surface-variant hover:bg-white/5" href="/">
+              Desk
+            </Link>
             <Link className="rounded-lg px-3 py-2 text-on-surface-variant hover:bg-white/5" href="/events">
               Webhooks
             </Link>
@@ -166,7 +181,7 @@ function DraftWorkspace() {
                 <button
                   key={item._id}
                   type="button"
-                  onClick={() => setSelectedId(item._id)}
+                  onClick={() => selectDraft(item._id)}
                   className={`w-full rounded-xl border p-3 text-left transition ${
                     item._id === activeId
                       ? "border-primary/30 bg-primary/8"
