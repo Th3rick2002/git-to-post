@@ -1,6 +1,35 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { internalMutation, query } from "./_generated/server";
 import { getGithubUserId } from "./lib/githubIdentity";
+import { ownerFromIdentity } from "./lib/owner";
+
+const eventStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("processing"),
+  v.literal("processed"),
+  v.literal("failed")
+);
+
+const githubEventDocValidator = v.object({
+  _id: v.id("githubEvents"),
+  _creationTime: v.number(),
+  deliveryId: v.string(),
+  event: v.string(),
+  action: v.optional(v.string()),
+  repository: v.optional(v.string()),
+  sender: v.optional(v.string()),
+  payload: v.any(),
+  status: eventStatusValidator,
+  error: v.optional(v.string()),
+  processedAt: v.optional(v.number()),
+  draftId: v.optional(v.id("contentDrafts")),
+  skipReason: v.optional(v.string()),
+  installationId: v.optional(v.number()),
+  githubRepositoryId: v.optional(v.number()),
+  ownerTokenIdentifier: v.optional(v.string()),
+  ownerGithubUserId: v.optional(v.number()),
+});
 
 export const saveEvent = internalMutation({
   args: {
@@ -12,8 +41,14 @@ export const saveEvent = internalMutation({
     payload: v.any(),
     installationId: v.optional(v.number()),
     githubRepositoryId: v.optional(v.number()),
+    ownerTokenIdentifier: v.optional(v.string()),
     ownerGithubUserId: v.optional(v.number()),
   },
+  returns: v.object({
+    eventId: v.id("githubEvents"),
+    isNew: v.boolean(),
+    status: eventStatusValidator,
+  }),
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("githubEvents")
@@ -21,76 +56,74 @@ export const saveEvent = internalMutation({
       .first();
 
     if (existing) {
-      return existing._id;
+      return {
+        eventId: existing._id,
+        isNew: false,
+        status: existing.status,
+      };
     }
 
+    let owner = args.ownerTokenIdentifier;
     let ownerGithubUserId = args.ownerGithubUserId;
+    const installationId = args.installationId;
 
-    if (ownerGithubUserId === undefined && args.installationId) {
+    if (installationId !== undefined && (!owner || ownerGithubUserId === undefined)) {
       const installation = await ctx.db
         .query("githubInstallations")
         .withIndex("by_installation_id", (q) =>
-          q.eq("installationId", args.installationId!)
+          q.eq("installationId", installationId)
         )
         .first();
 
       if (installation) {
-        ownerGithubUserId = installation.ownerGithubUserId;
+        owner = owner || installation.ownerTokenIdentifier;
+        ownerGithubUserId = ownerGithubUserId ?? installation.ownerGithubUserId;
       }
     }
 
     const eventId = await ctx.db.insert("githubEvents", {
       deliveryId: args.deliveryId,
       event: args.event,
-      action: args.action,
-      repository: args.repository,
-      sender: args.sender,
       payload: args.payload,
       status: "pending",
-      installationId: args.installationId,
-      githubRepositoryId: args.githubRepositoryId,
-      ownerGithubUserId,
+      ...(args.action !== undefined ? { action: args.action } : {}),
+      ...(args.repository !== undefined ? { repository: args.repository } : {}),
+      ...(args.sender !== undefined ? { sender: args.sender } : {}),
+      ...(args.installationId !== undefined
+        ? { installationId: args.installationId }
+        : {}),
+      ...(args.githubRepositoryId !== undefined
+        ? { githubRepositoryId: args.githubRepositoryId }
+        : {}),
+      ...(owner !== undefined ? { ownerTokenIdentifier: owner } : {}),
+      ...(ownerGithubUserId !== undefined
+        ? { ownerGithubUserId }
+        : {}),
     });
 
-    return eventId;
+    return { eventId, isNew: true, status: "pending" as const };
   },
 });
 
 export const processEvent = internalMutation({
-  args: {
-    eventId: v.id("githubEvents"),
-  },
+  args: { eventId: v.id("githubEvents") },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const event = await ctx.db.get(args.eventId);
-    if (!event) return;
+    if (!event) {
+      return null;
+    }
 
-    await ctx.db.patch(args.eventId, {
-      status: "processing",
+    if (event.status === "processed" || event.status === "processing") {
+      return null;
+    }
+
+    // Schedule AI generation workflow
+    await ctx.scheduler.runAfter(0, internal.postGeneration.enqueueFromEvent, {
+      eventId: event._id,
     });
 
-    try {
-      if (event.event === "push") {
-        const payload = event.payload;
-        const commits =
-          typeof payload === "object" &&
-          payload !== null &&
-          "commits" in payload &&
-          Array.isArray(payload.commits)
-            ? payload.commits
-            : [];
-        void commits.length;
-      }
-
-      await ctx.db.patch(args.eventId, {
-        status: "processed",
-        processedAt: Date.now(),
-      });
-    } catch (error) {
-      await ctx.db.patch(args.eventId, {
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    return null;
   },
 });
 
@@ -100,22 +133,37 @@ export const processEvent = internalMutation({
 export const list = query({
   args: {
     limit: v.optional(v.number()),
+    ownerTokenIdentifier: v.optional(v.string()),
   },
+  returns: v.array(githubEventDocValidator),
   handler: async (ctx, args) => {
     const ownerGithubUserId = await getGithubUserId(ctx);
-    if (ownerGithubUserId === null) {
-      return [];
+    const limit = Math.max(1, Math.min(50, Math.floor(args.limit ?? 20)));
+
+    if (ownerGithubUserId !== null) {
+      const events = await ctx.db
+        .query("githubEvents")
+        .withIndex("by_owner_github_user_id", (q) =>
+          q.eq("ownerGithubUserId", ownerGithubUserId)
+        )
+        .order("desc")
+        .take(limit);
+
+      if (events.length > 0) return events;
     }
 
-    const limit = args.limit ?? 50;
+    const identity = await ctx.auth.getUserIdentity();
+    const owner = ownerFromIdentity(identity, args.ownerTokenIdentifier);
 
-    return await ctx.db
-      .query("githubEvents")
-      .withIndex("by_owner_github_user_id", (q) =>
-        q.eq("ownerGithubUserId", ownerGithubUserId)
-      )
-      .order("desc")
-      .take(limit);
+    if (owner) {
+      return await ctx.db
+        .query("githubEvents")
+        .withIndex("by_owner", (q) => q.eq("ownerTokenIdentifier", owner))
+        .order("desc")
+        .take(limit);
+    }
+
+    return [];
   },
 });
 
@@ -125,16 +173,24 @@ export const list = query({
 export const getById = query({
   args: {
     id: v.id("githubEvents"),
+    ownerTokenIdentifier: v.optional(v.string()),
   },
+  returns: v.union(githubEventDocValidator, v.null()),
   handler: async (ctx, args) => {
     const ownerGithubUserId = await getGithubUserId(ctx);
-    if (ownerGithubUserId === null) return null;
-
     const event = await ctx.db.get(args.id);
-    if (!event || event.ownerGithubUserId !== ownerGithubUserId) {
-      return null;
+    if (!event) return null;
+
+    if (ownerGithubUserId !== null && event.ownerGithubUserId === ownerGithubUserId) {
+      return event;
     }
 
-    return event;
+    const identity = await ctx.auth.getUserIdentity();
+    const owner = ownerFromIdentity(identity, args.ownerTokenIdentifier);
+    if (owner && event.ownerTokenIdentifier === owner) {
+      return event;
+    }
+
+    return null;
   },
 });

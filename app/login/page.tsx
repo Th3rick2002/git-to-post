@@ -25,7 +25,11 @@ export default function LoginPage() {
         callbackURL: "/",
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al iniciar sesión con GitHub");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Error al iniciar sesión con GitHub"
+      );
       setLoading(false);
     }
   };
@@ -51,8 +55,8 @@ export default function LoginPage() {
         <div className="space-y-3 pt-2">
           <button
             onClick={handleGitHubLogin}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-medium py-3 px-4 rounded-xl hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed shadow"
+            disabled={loading || isPending}
+            className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-medium py-3 px-4 rounded-xl hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed shadow cursor-pointer"
           >
             <svg
               className="w-5 h-5 fill-current"
