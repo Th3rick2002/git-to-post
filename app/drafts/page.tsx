@@ -19,6 +19,8 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { useSession } from "@/lib/auth-client";
+import { ownerTokenFromSession } from "@/lib/sessionOwner";
 
 type OutputTab = "x" | "linkedin" | "markdown";
 type ImageMode = "none" | "reference" | "abstract";
@@ -68,7 +70,12 @@ export default function DraftsPage() {
 }
 
 function DraftWorkspace() {
-  const drafts = useQuery(api.postGeneration.list, { limit: 30 });
+  const { data: session, isPending } = useSession();
+  const ownerTokenIdentifier = ownerTokenFromSession(session);
+  const drafts = useQuery(
+    api.postGeneration.list,
+    ownerTokenIdentifier ? { limit: 30, ownerTokenIdentifier } : "skip",
+  );
   const [selectedId, setSelectedId] = useState<Id<"contentDrafts"> | null>(null);
 
   const activeId =
@@ -77,8 +84,29 @@ function DraftWorkspace() {
       : drafts?.[0]?._id;
   const detail = useQuery(
     api.postGeneration.get,
-    activeId ? { draftId: activeId } : "skip",
+    activeId && ownerTokenIdentifier
+      ? { draftId: activeId, ownerTokenIdentifier }
+      : "skip",
   );
+
+  if (!isPending && !ownerTokenIdentifier) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-background p-6">
+        <div className="glass-elevated max-w-lg rounded-3xl p-8 text-center">
+          <h1 className="text-2xl font-semibold">Inicia sesión con GitHub</h1>
+          <p className="mt-3 text-sm text-on-surface-variant">
+            Los borradores se muestran solo para la cuenta que instaló la GitHub App.
+          </p>
+          <Link
+            href="/login"
+            className="mt-6 inline-flex rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-on-primary"
+          >
+            Continuar con GitHub
+          </Link>
+        </div>
+      </main>
+    );
+  }
   const draft = detail?.draft ?? drafts?.find((item) => item._id === activeId);
   const references = detail?.references ?? [];
 

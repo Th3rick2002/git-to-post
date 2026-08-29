@@ -1,7 +1,10 @@
 "use client";
 
 import { useQuery } from "convex/react";
+import Link from "next/link";
 import { api } from "../../convex/_generated/api";
+import { useSession } from "@/lib/auth-client";
+import { ownerTokenFromSession } from "@/lib/sessionOwner";
 
 export default function EventsPage() {
   if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
@@ -21,7 +24,33 @@ export default function EventsPage() {
 }
 
 function EventsFeed() {
-  const events = useQuery(api.githubEvents.list, { limit: 20 });
+  const { data: session, isPending } = useSession();
+  const ownerTokenIdentifier = ownerTokenFromSession(session);
+  const events = useQuery(
+    api.githubEvents.list,
+    ownerTokenIdentifier ? { limit: 20, ownerTokenIdentifier } : "skip",
+  );
+
+  if (!isPending && !ownerTokenIdentifier) {
+    return (
+      <main className="min-h-screen bg-slate-950 p-8 font-sans text-slate-100">
+        <div className="mx-auto max-w-4xl space-y-4">
+          <h1 className="text-3xl font-bold tracking-tight text-white">
+            Git-to-Post Webhooks
+          </h1>
+          <p className="text-slate-400">
+            Inicia sesión con GitHub para ver los eventos de tus repositorios.
+          </p>
+          <Link
+            href="/login"
+            className="inline-flex rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950"
+          >
+            Continuar con GitHub
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-950 p-8 font-sans text-slate-100">
