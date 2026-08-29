@@ -537,22 +537,6 @@ function DraftEditor({
                         onChange={(event) => setXThread(event.target.value)}
                         className="min-h-64 w-full resize-y bg-transparent text-sm leading-6 outline-none"
                       />
-                      <div className="space-y-1">
-                        {xThread
-                          .split(/\n\s*\n/)
-                          .map((post) => post.trim())
-                          .filter(Boolean)
-                          .map((post, index, posts) => (
-                            <p
-                              key={`${index}-${post.slice(0, 20)}`}
-                              className={`text-right font-mono text-[10px] ${
-                                post.length > 280 ? "text-rose-300" : "text-on-surface-variant"
-                              }`}
-                            >
-                              {index + 1}/{posts.length} · {post.length}/280
-                            </p>
-                          ))}
-                      </div>
                     </div>
                   ) : tab === "linkedin" ? (
                     <textarea

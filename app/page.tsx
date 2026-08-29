@@ -67,10 +67,23 @@ function HomeContent() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-on-surface">PublicaDev</h1>
             <p className="mt-1 text-sm text-on-surface-variant">
-              Conexión automática de repositorios con GitHub App y eventos en tiempo real.
+              Genera hilos de X, posts de LinkedIn y Changelogs con IA a partir de tus commits y releases.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-4 text-sm text-on-surface-variant">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-on-surface-variant">
+            <Link
+              href="/drafts"
+              className="rounded-xl border border-primary/30 bg-primary/20 px-3.5 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/30 hover:text-white"
+            >
+              Borradores IA
+            </Link>
+            <Link
+              href="/events"
+              className="rounded-xl border border-primary/20 bg-surface-variant px-3.5 py-1.5 text-xs font-semibold text-on-surface-variant transition hover:border-primary/40 hover:text-on-surface"
+            >
+              Webhooks
+            </Link>
+
             <div suppressHydrationWarning>
               {authLoading ? (
                 <span className="text-xs text-on-surface-variant">Verificando sesión...</span>

@@ -45,9 +45,18 @@ function EventsFeed() {
               Recepción y procesamiento en tiempo real de eventos de GitHub con Convex.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Link href="/" className="text-sm text-primary transition-colors hover:text-white">
-              Volver al desk
+          <div className="flex items-center gap-3">
+            <Link
+              href="/"
+              className="rounded-lg border border-primary/20 bg-surface-variant px-3 py-1.5 text-xs font-medium text-on-surface-variant transition hover:border-primary/40 hover:text-on-surface"
+            >
+              Dashboard
+            </Link>
+            <Link
+              href="/drafts"
+              className="rounded-lg border border-primary/30 bg-primary/20 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/30 hover:text-white"
+            >
+              Borradores IA
             </Link>
           </div>
         </header>
