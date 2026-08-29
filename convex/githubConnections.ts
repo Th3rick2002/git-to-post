@@ -9,7 +9,7 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { importPKCS8, SignJWT } from "jose";
-import { getGithubUserId, requireGithubUserId } from "./lib/githubIdentity";
+import { getGithubUserId, requireIdentity } from "./lib/githubIdentity";
 
 /**
  * Creates a JWT to authenticate as the GitHub App.
@@ -71,14 +71,16 @@ async function applyOwnerToInstallation(
 export const beginInstallation = mutation({
   args: {},
   handler: async (ctx) => {
-    const ownerGithubUserId = await requireGithubUserId(ctx);
+    const identity = await requireIdentity(ctx);
+    const ownerGithubUserId = (await getGithubUserId(ctx)) ?? undefined;
 
     const state = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
     const expiresAt = Date.now() + 15 * 60 * 1000;
 
     await ctx.db.insert("githubInstallationIntents", {
       state,
-      ownerGithubUserId,
+      ownerTokenIdentifier: identity.tokenIdentifier,
+      ...(ownerGithubUserId !== undefined ? { ownerGithubUserId } : {}),
       expiresAt,
     });
 
@@ -132,6 +134,7 @@ export const saveInstallationAndRepos = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
+    // 1. Mark intent as used
     const intent = await ctx.db
       .query("githubInstallationIntents")
       .withIndex("by_state", (q) => q.eq("state", args.state))
@@ -144,6 +147,7 @@ export const saveInstallationAndRepos = internalMutation({
       });
     }
 
+    // 2. Save or update installation
     const existingInstallation = await ctx.db
       .query("githubInstallations")
       .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))
@@ -236,14 +240,10 @@ export const completeInstallation = action({
     installationId: v.number(),
   },
   handler: async (ctx, args) => {
-    const ownerGithubUserId = await ctx.runQuery(
+    let ownerGithubUserId = await ctx.runQuery(
       internal.lib.githubIdentity.getCurrentGithubUserId,
       {}
     );
-
-    if (ownerGithubUserId === null) {
-      throw new Error("Debes iniciar sesión para conectar repositorios.");
-    }
 
     const intent = await ctx.runQuery(internal.githubConnections.getValidIntent, {
       state: args.state,
@@ -254,6 +254,7 @@ export const completeInstallation = action({
     }
 
     if (
+      ownerGithubUserId !== null &&
       intent.ownerGithubUserId !== undefined &&
       intent.ownerGithubUserId !== ownerGithubUserId
     ) {
@@ -397,6 +398,10 @@ export const completeInstallation = action({
         },
       ];
     });
+
+    if (ownerGithubUserId === null || ownerGithubUserId === undefined) {
+      ownerGithubUserId = account.id;
+    }
 
     await ctx.runMutation(internal.githubConnections.saveInstallationAndRepos, {
       state: args.state,
