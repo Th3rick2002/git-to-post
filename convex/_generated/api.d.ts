@@ -8,8 +8,13 @@
  * @module
  */
 
+import type * as agents_postWriter from "../agents/postWriter.js";
 import type * as githubEvents from "../githubEvents.js";
 import type * as http from "../http.js";
+import type * as lib_githubEvent from "../lib/githubEvent.js";
+import type * as postGeneration from "../postGeneration.js";
+import type * as postGenerationActions from "../postGenerationActions.js";
+import type * as postGenerationWorkflow from "../postGenerationWorkflow.js";
 import type * as tasks from "../tasks.js";
 
 import type {
@@ -19,8 +24,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "agents/postWriter": typeof agents_postWriter;
   githubEvents: typeof githubEvents;
   http: typeof http;
+  "lib/githubEvent": typeof lib_githubEvent;
+  postGeneration: typeof postGeneration;
+  postGenerationActions: typeof postGenerationActions;
+  postGenerationWorkflow: typeof postGenerationWorkflow;
   tasks: typeof tasks;
 }>;
 
@@ -50,4 +60,7 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
+  workflow: import("@convex-dev/workflow/_generated/component.js").ComponentApi<"workflow">;
+};
