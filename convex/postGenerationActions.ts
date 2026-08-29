@@ -345,14 +345,12 @@ export const collectEvidence = internalAction({
       evidenceText: payloadEvidence,
       locale,
     });
-    const prompt = `Create a complete post draft in ${locale} with tone "${input.tone}".
+    const prompt = `Create a complete social post draft in ${locale} with tone "${input.tone}".
 
-Write title, summary, X thread, LinkedIn post, changelog, technical highlights, breaking changes, and hashtags in ${locale}. That is the language of the repository evidence (commit messages, titles, release notes). Do not translate into English unless the evidence itself is English.
-
-Tone meanings:
-- devrel: energetic and launch-oriented, while remaining factual.
-- technical: implementation details, architecture, compatibility, and verified breaking changes.
-- executive: stability, delivery, risk, and business impact in professional language.
+Tone guidelines:
+- devrel: Developer Advocate style — high energy, builder-first excitement, emphasizing developer experience (DX), community empowerment, problem-solving, and practical code capability.
+- technical: Staff Engineer / Architect style — deep dive into implementation mechanics, type safety, concurrency, system design, trade-offs, and verified breaking changes.
+- executive: Engineering Leader / VP style — high-level strategic overview focusing on system reliability, velocity, risk reduction, technical debt reduction, and business impact in polished language.
 
 ${paletteInstruction}
 

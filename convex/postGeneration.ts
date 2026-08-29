@@ -871,21 +871,21 @@ export const getImagePlan = internalQuery({
       return { mode: draft.imageMode };
     }
     const brief = draft.visualBrief ?? {
-      subject: "abstract software evolution and forward motion",
-      mood: "precise, luminous, modern",
-      palette: ["deep blue", "electric violet", "soft cyan"],
+      subject: "futuristic computational architecture, luminous network nodes, modular crystal components",
+      mood: "luminous, sleek, cutting-edge, atmospheric",
+      palette: ["deep space indigo", "electric violet", "emerald glow", "soft neon cyan"],
       avoid: [],
     };
     const palette = draft.requestedPalette?.length
       ? draft.requestedPalette
       : brief.palette;
     const prompt = [
-      "Create a premium abstract editorial background for a software release.",
-      `Visual subject: ${brief.subject}.`,
-      `Mood: ${brief.mood}.`,
-      `Palette: ${palette.join(", ")}.`,
-      "Use soft luminous gradients, atmospheric depth, flowing translucent forms, and a polished 1:1 composition.",
-      "No logos, no text, no letters, no numbers, no icons, no interface, no code screenshot, no watermark, and no brand marks.",
+      "A high-end 3D developer platform editorial artwork for a major software release.",
+      `Subject metaphor: ${brief.subject}.`,
+      `Atmosphere and Mood: ${brief.mood}.`,
+      `Color Palette: ${palette.join(", ")}.`,
+      "Style: modern tech launch cover, frosted glassmorphism, iridescent surfaces, cinematic soft studio lighting, volumetric raytraced glow, octane render, pristine 8k clean composition.",
+      "Strict negative constraints: Absolutely NO text, NO letters, NO typography, NO code syntax, NO numbers, NO logos, NO UI screenshots, NO icons, NO watermark.",
       brief.avoid.length > 0 ? `Also avoid: ${brief.avoid.join(", ")}.` : "",
     ]
       .filter(Boolean)
