@@ -419,7 +419,10 @@ export const completeInstallation = action({
 export const claimInstallationsForCurrentUser = mutation({
   args: {},
   handler: async (ctx) => {
-    const ownerGithubUserId = await requireGithubUserId(ctx);
+    const ownerGithubUserId = await getGithubUserId(ctx);
+    if (ownerGithubUserId === null) {
+      return { claimed: 0 };
+    }
 
     const installs = await ctx.db
       .query("githubInstallations")

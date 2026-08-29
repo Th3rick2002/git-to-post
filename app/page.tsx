@@ -35,7 +35,7 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!isSignedIn) return;
-    void claimInstallations();
+    claimInstallations().catch(() => {});
   }, [isSignedIn, claimInstallations]);
 
   const processInstallationCallback = useCallback(
