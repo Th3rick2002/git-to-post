@@ -13,6 +13,7 @@ import type * as auth from "../auth.js";
 import type * as githubConnections from "../githubConnections.js";
 import type * as githubEvents from "../githubEvents.js";
 import type * as http from "../http.js";
+import type * as lib_contentLocale from "../lib/contentLocale.js";
 import type * as lib_githubEvent from "../lib/githubEvent.js";
 import type * as lib_githubIdentity from "../lib/githubIdentity.js";
 import type * as lib_owner from "../lib/owner.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   githubConnections: typeof githubConnections;
   githubEvents: typeof githubEvents;
   http: typeof http;
+  "lib/contentLocale": typeof lib_contentLocale;
   "lib/githubEvent": typeof lib_githubEvent;
   "lib/githubIdentity": typeof lib_githubIdentity;
   "lib/owner": typeof lib_owner;

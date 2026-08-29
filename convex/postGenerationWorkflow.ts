@@ -73,15 +73,23 @@ export const generateDraft = workflow
           { draftId: args.draftId, prompt: plan.prompt },
           { retry: true },
         );
-        await step.runMutation(
-          internal.postGeneration.saveImageResult,
-          {
-            draftId: args.draftId,
-            storageId: image.storageId,
-            prompt: plan.prompt,
-          },
-          { inline: true },
-        );
+        if (image.status === "generated") {
+          await step.runMutation(
+            internal.postGeneration.saveImageResult,
+            {
+              draftId: args.draftId,
+              storageId: image.storageId,
+              prompt: plan.prompt,
+            },
+            { inline: true },
+          );
+        } else {
+          await step.runMutation(
+            internal.postGeneration.finishWithoutImage,
+            { draftId: args.draftId, reason: image.reason },
+            { inline: true },
+          );
+        }
       } else if (plan.mode === "reference") {
         await step.runMutation(
           internal.postGeneration.finishReferenceImage,
