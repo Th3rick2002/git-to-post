@@ -9,9 +9,11 @@
  */
 
 import type * as agents_postWriter from "../agents/postWriter.js";
+import type * as githubConnections from "../githubConnections.js";
 import type * as githubEvents from "../githubEvents.js";
 import type * as http from "../http.js";
 import type * as lib_githubEvent from "../lib/githubEvent.js";
+import type * as lib_owner from "../lib/owner.js";
 import type * as postGeneration from "../postGeneration.js";
 import type * as postGenerationActions from "../postGenerationActions.js";
 import type * as postGenerationWorkflow from "../postGenerationWorkflow.js";
@@ -25,9 +27,11 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "agents/postWriter": typeof agents_postWriter;
+  githubConnections: typeof githubConnections;
   githubEvents: typeof githubEvents;
   http: typeof http;
   "lib/githubEvent": typeof lib_githubEvent;
+  "lib/owner": typeof lib_owner;
   postGeneration: typeof postGeneration;
   postGenerationActions: typeof postGenerationActions;
   postGenerationWorkflow: typeof postGenerationWorkflow;
