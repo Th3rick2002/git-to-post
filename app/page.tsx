@@ -1,21 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { readOnboardingComplete } from "./onboarding/onboarding-storage";
 import { WelcomeBack } from "./onboarding/welcome-back";
 
 export default function Home() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const ready = useSyncExternalStore(
+    () => () => undefined,
+    readOnboardingComplete,
+    () => false,
+  );
 
   useEffect(() => {
     if (!readOnboardingComplete()) {
       router.replace("/onboarding");
-      return;
     }
-    setReady(true);
-  }, [router]);
+  }, [ready, router]);
 
   if (!ready) {
     return <div className="min-h-screen bg-background" />;
