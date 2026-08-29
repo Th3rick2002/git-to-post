@@ -1,16 +1,25 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { readOnboardingComplete } from "./onboarding/onboarding-storage";
+import { WelcomeBack } from "./onboarding/welcome-back";
 
 export default function Home() {
-  const tasks = useQuery(api.tasks.get);
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
 
-  return (
-    <main className="p-24">
-      {tasks?.map(({ _id, text }) => (
-        <div key={_id}>{text}</div>
-      ))}
-    </main>
-  );
+  useEffect(() => {
+    if (!readOnboardingComplete()) {
+      router.replace("/onboarding");
+      return;
+    }
+    setReady(true);
+  }, [router]);
+
+  if (!ready) {
+    return <div className="min-h-screen bg-background" />;
+  }
+
+  return <WelcomeBack />;
 }
