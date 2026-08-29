@@ -13,22 +13,24 @@ export function RepoRail({
 }: {
   repos: ConnectedRepo[];
   selectedFullName: string | null;
-  onAdd: () => void;
+  onAdd?: () => void;
   addDisabled?: boolean;
 }) {
   return (
     <aside className="hidden w-64 shrink-0 flex-col lg:flex">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-xs font-semibold tracking-wider text-on-surface-variant uppercase">Repositories</h2>
-        <button
-          type="button"
-          onClick={onAdd}
-          disabled={addDisabled}
-          className="flex cursor-pointer items-center gap-1 rounded-md border border-primary/30 bg-primary/20 px-2 py-1 text-xs font-medium text-primary shadow-[0_0_15px_color-mix(in_srgb,var(--primary)_10%,transparent)] transition-all hover:bg-primary/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add
-        </button>
+        {onAdd ? (
+          <button
+            type="button"
+            onClick={onAdd}
+            disabled={addDisabled}
+            className="flex cursor-pointer items-center gap-1 rounded-md border border-primary/30 bg-primary/20 px-2 py-1 text-xs font-medium text-primary shadow-[0_0_15px_color-mix(in_srgb,var(--primary)_10%,transparent)] transition-all hover:bg-primary/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add
+          </button>
+        ) : null}
       </div>
       <nav aria-label="Repositories" className="flex flex-col gap-2">
         {repos.map((repo) => {
@@ -65,7 +67,7 @@ export function RepoSelect({
 }: {
   repos: ConnectedRepo[];
   selectedFullName: string | null;
-  onAdd: () => void;
+  onAdd?: () => void;
   onSelect: (fullName: string) => void;
   addDisabled?: boolean;
 }) {
@@ -88,15 +90,17 @@ export function RepoSelect({
           </option>
         ))}
       </select>
-      <button
-        type="button"
-        onClick={onAdd}
-        disabled={addDisabled}
-        className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-primary/30 bg-primary/20 px-3 py-2 text-xs font-medium text-primary shadow-[0_0_15px_color-mix(in_srgb,var(--primary)_10%,transparent)] transition-all hover:bg-primary/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Add
-      </button>
+      {onAdd ? (
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={addDisabled}
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-primary/30 bg-primary/20 px-3 py-2 text-xs font-medium text-primary shadow-[0_0_15px_color-mix(in_srgb,var(--primary)_10%,transparent)] transition-all hover:bg-primary/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add
+        </button>
+      ) : null}
     </div>
   );
 }

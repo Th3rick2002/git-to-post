@@ -10,7 +10,7 @@ export type RepoSettingsValues = {
 };
 
 export const DEFAULT_REPO_SETTINGS: RepoSettingsValues = {
-  integrationMethod: "grok_bot",
+  integrationMethod: "manual",
   triggers: {
     newReleases: true,
     tags: false,
@@ -30,14 +30,14 @@ export function settingsFromDoc(
 ): RepoSettingsValues {
   if (!doc) {
     return {
-      integrationMethod: DEFAULT_REPO_SETTINGS.integrationMethod,
+      integrationMethod: "manual",
       triggers: { ...DEFAULT_REPO_SETTINGS.triggers },
       artifacts: { ...DEFAULT_REPO_SETTINGS.artifacts },
     };
   }
 
   return {
-    integrationMethod: doc.integrationMethod,
+    integrationMethod: "manual",
     triggers: { ...doc.triggers },
     artifacts: { ...doc.artifacts },
   };

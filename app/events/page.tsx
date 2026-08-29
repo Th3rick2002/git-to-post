@@ -5,6 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useSession } from "@/lib/auth-client";
 import { ownerTokenFromSession } from "@/lib/sessionOwner";
+import { EventCard } from "../desk/event-card";
 
 export default function EventsPage() {
   if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
@@ -45,9 +46,6 @@ function EventsFeed() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Link href="/drafts" className="text-sm text-primary transition-colors hover:text-white">
-              Borradores IA
-            </Link>
             <Link href="/" className="text-sm text-primary transition-colors hover:text-white">
               Volver al desk
             </Link>
@@ -115,46 +113,7 @@ function EventsFeed() {
           ) : (
             <div className="space-y-3">
               {events.map((event) => (
-                <div key={event._id} className="glass-panel rounded-xl p-4">
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-xs text-primary">
-                        {event.event}
-                      </span>
-                      {event.action ? (
-                        <span className="rounded bg-surface-variant px-2 py-0.5 text-xs text-on-surface-variant">
-                          {event.action}
-                        </span>
-                      ) : null}
-                      <span className="font-medium text-on-surface">{event.repository || "Desconocido"}</span>
-                    </div>
-
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        event.status === "processed"
-                          ? "border border-primary/20 bg-primary/10 text-primary"
-                          : event.status === "failed"
-                            ? "border border-error/30 bg-error/10 text-error"
-                            : "border border-primary/15 bg-surface-variant text-on-surface-variant"
-                      }`}
-                    >
-                      {event.status}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs text-on-surface-variant">
-                    <span>
-                      Enviado por: <strong>{event.sender || "N/A"}</strong>
-                    </span>
-                    <span suppressHydrationWarning>{new Date(event._creationTime).toLocaleString()}</span>
-                  </div>
-
-                  {event.error ? (
-                    <div className="mt-2 rounded border border-error/30 bg-error/10 p-2 text-xs text-error">
-                      Error: {event.error}
-                    </div>
-                  ) : null}
-                </div>
+                <EventCard key={event._id} event={event} />
               ))}
             </div>
           )}

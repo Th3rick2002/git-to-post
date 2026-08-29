@@ -1,13 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useSession } from "@/lib/auth-client";
 import { ownerTokenFromSession } from "@/lib/sessionOwner";
 import { hrefFor, readView } from "../workspace/view";
-import { settingsFromDoc, type RepoSettingsValues } from "../workspace/types";
 import { ActivityFeed } from "./activity-feed";
 import { RepoDetail } from "./repo-detail";
 import { RepoRail, RepoSelect } from "./repo-rail";
@@ -23,7 +21,6 @@ export function Dashboard({
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const ownerTokenIdentifier = ownerTokenFromSession(session);
-  const [settingsByRepo, setSettingsByRepo] = useState<Record<number, RepoSettingsValues>>({});
 
   const repositories = useQuery(api.githubConnections.listRepositories, {
     ownerTokenIdentifier,
@@ -34,16 +31,6 @@ export function Dashboard({
 
   function selectRepo(fullName: string) {
     router.replace(hrefFor(fullName));
-  }
-
-  function saveSettings(next: RepoSettingsValues) {
-    if (!selected) {
-      return;
-    }
-    setSettingsByRepo((current) => ({
-      ...current,
-      [selected.githubRepositoryId]: next,
-    }));
   }
 
   if (repositories === undefined) {
@@ -69,10 +56,6 @@ export function Dashboard({
     );
   }
 
-  const selectedSettings = selected
-    ? (settingsByRepo[selected.githubRepositoryId] ?? settingsFromDoc(undefined))
-    : settingsFromDoc(undefined);
-
   return (
     <div className="mt-6 flex flex-1 flex-col gap-6 lg:flex-row">
       <RepoRail
@@ -90,7 +73,7 @@ export function Dashboard({
           addDisabled={connecting}
         />
         {selected ? (
-          <RepoDetail repo={selected} settings={selectedSettings} onChange={saveSettings} />
+          <RepoDetail repo={selected} />
         ) : (
           <p className="text-sm text-on-surface-variant">Selecciona un repositorio para configurarlo.</p>
         )}
